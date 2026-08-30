@@ -1300,6 +1300,42 @@ Notes for module authors:
 - A curve says nothing about which values are **legal** — that is
   quantisation, a separate concept belonging to the module.
 
+### Edit speed is how fast the range is crossed, and it is not a sub-range
+
+`knob_step_frac` on a `chain_params` entry, in the same
+`src/shared/knob_engine.mjs`. Opt-in; omit it and the knob is stepped exactly
+as before.
+
+Three orthogonal axes, and keeping them apart is the whole design:
+
+```
+knob_curve        WHERE     the physical resolution is concentrated
+knob_step_frac    HOW FAST  the knob traverses the range (Micro / Normal / Long)
+quantisation      WHICH     output values are legal   (module's own business)
+```
+
+The obvious way to build a sensitivity switch is to narrow `min`/`max`. It is
+also the way that stalled on hardware: a sub-range has to be refreshed under
+the hand as the value moves, and the refresh is exactly what clamped and
+jumped. A speed has no state to refresh — the range it walks is the one that
+was declared, always.
+
+Concretely, `knob_step_frac` is the fraction of the range one coarse detent
+covers, so it buys a **detent budget** of `1/knob_step_frac` end to end. The
+curve then decides where that budget is spent. Measured on `0..4000`:
+
+| | linear | low γ1.6 | low γ2.0 | low γ2.4 |
+|---|---|---|---|---|
+| Micro (`0.002`) | 500 | 501 | 500 | 500 |
+| Normal (`0.005`) | 200 | 201 | 200 | 200 |
+| Long (`0.0125`) | 80 | 81 | 81 | 81 |
+
+Read down a column: same shape, different speed. Read across a row: same
+speed, different shape. Clamped to `[0.0001, 0.25]`. A value that is absent,
+`null`, empty or non-finite is the default, not the slowest setting —
+`Number(null)` is `0`, and a knob that takes ten thousand detents to cross its
+range is not a safe reading of "unset".
+
 ### A momentary fires from the KNOB too, and it LATCHES per gesture
 
 A trigger is `access: "write"` on an ordinary enum — there is no `trigger` type

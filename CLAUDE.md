@@ -1271,6 +1271,10 @@ A `Buses` action row opens the slot's bus list; a bus's own menu opens its
   whatever the strength is, and the coarsest detent is bounded at `gamma` x
   linear — the top of a wide range cannot run away. Mutually exclusive with
   declared-step.
+- **Edit speed is how fast a range is crossed, and it is NOT a sub-range.**
+  `knob_step_frac` buys a detent budget of `1/knob_step_frac` end to end; the
+  curve decides where that budget is spent. Narrowing min/max instead is what
+  a moving window did, and it is what stalled on hardware.
 ### Recording / capture
 
 Audio capture is shim-side: the Quantized Sampler (Shift+Sample) and Skipback

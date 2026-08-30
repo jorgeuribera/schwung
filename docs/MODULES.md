@@ -2853,6 +2853,51 @@ These map to knobs 1-8 in the Shadow UI for quick access.
 }
 ```
 
+### `knob_curve` — where a wide range spends its physical travel
+
+Optional on a `chain_params` entry. Opt-in and additive: omit it and the knob
+is stepped exactly as before.
+
+| key | value | meaning |
+|---|---|---|
+| `knob_curve` | `low_focus` | more physical resolution near the **minimum** |
+| | `high_focus` | more physical resolution near the **maximum** |
+| `knob_curve_gamma` | number ≥ 1 | how strong; default `2`, clamped to `[1, 8]` |
+
+```json
+{"key": "a_time", "name": "A Time", "type": "float",
+ "min": 0, "max": 4000, "step": 1, "unit": "ms",
+ "knob_curve": "low_focus", "knob_curve_gamma": 2}
+```
+
+Reach for this when a range is musically **denser at one end** than the other.
+Range-normalised stepping gives every knob about 200 detents end to end, which
+is right for a sweep but means 0.5% of 4000 ms is 20 ms a detent — so a delay
+time's whole comb/flanger region below ~20 ms is a single click. `low_focus`
+spends more of the same 200 detents down there and fewer up at the atmospheric
+end. `high_focus` is the mirror.
+
+The full range stays exactly as declared and stays fully reachable. Properties
+worth relying on:
+
+- **Switching curve does not move the value.** `u` is recovered from the
+  current value with the exact inverse, so a param sitting at 347 ms is still
+  at 347 ms after the curve changes — it just responds differently to the next
+  detent.
+- **The coarsest detent is bounded at `gamma` times the linear one**, so the
+  top of the range cannot run away.
+- **Exact endpoints**, monotonic, immediately reversible, no jump on
+  first touch, bipolar ranges handled through the ordinary normalisation.
+- **Mutually exclusive with `knob_step_mode: "declared"`** — declared-step
+  wins and the curve is ignored, rather than the two being silently blended.
+
+It is called `gamma` because the mapping is a power law (`y = u^gamma`). It is
+not logarithmic.
+
+A curve decides how travel is **distributed**; it says nothing about which
+output values are legal. Quantisation is a separate concern and belongs to your
+module.
+
 ### `access` — which direction a param means something in
 
 Optional on a `chain_params` entry. Defaults to `readwrite`; declare it when

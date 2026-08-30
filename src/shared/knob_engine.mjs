@@ -276,6 +276,162 @@ export function knobInit(initialValue) {
     return { value: initialValue, detentAccum: 0, lastTurnMs: 0, lastDirection: 0 };
 }
 
+/* ------------------------------------------------------------------ *
+ * RESPONSE CURVES
+ * ------------------------------------------------------------------ *
+ * A wide range and a fine one ask the opposite things of the same wrist
+ * movement. Range-normalised stepping (MIN_STEP_RANGE_FRAC) answers "make
+ * every knob cross in about the same movement", which is right for a sweep
+ * and wrong for a delay time: 0.5% of 4000 ms is 20 ms a detent, so the
+ * whole flanger/comb region below ~20 ms is a single click, while 3-second
+ * atmospheric times get the same 20 ms.
+ *
+ * A curve redistributes that travel WITHOUT changing how much of it there
+ * is. The knob keeps a hidden control coordinate u in [0,1] that a detent
+ * moves by a fixed amount, and the parameter is y = f(u) laid over the
+ * declared range:
+ *
+ *     linear       y = u
+ *     low_focus    y = u^gamma                  more travel near MINIMUM
+ *     high_focus   y = 1 - (1-u)^gamma          more travel near MAXIMUM
+ *
+ * So the range is always 1/du ~= 200 detents end to end whatever gamma is;
+ * the curve only decides where those detents are spent. That is the whole
+ * point, and it is also the safety property: because dy/du = gamma * u^
+ * (gamma-1) is bounded by gamma over [0,1], the COARSEST detent anywhere on
+ * the dial is at most gamma times the linear one. The high end cannot run
+ * away. (A moving min/max window had no such bound, which is why it kept
+ * stalling on hardware — see EXPERIMENTAL_LIVE_PARAMS.md.)
+ *
+ * u is never stored. It is recovered from state.value on every call with the
+ * exact inverse (u = y^(1/gamma), or 1-(1-y)^(1/gamma)), the same trick
+ * declaredLatticeStep uses to avoid a second source of truth. That is what
+ * makes it reversible and jump-free:
+ *
+ *   - seeding from an arbitrary existing value is exact, so the first
+ *     detent continues from where the sound already is;
+ *   - reversing just moves u the other way;
+ *   - u in [0,1] means min and max are hit EXACTLY and clamped, not
+ *     approached;
+ *   - switching curve at a standing value keeps that value, because the new
+ *     curve seeds from the value rather than from the old u.
+ *
+ * Module metadata opts in. Nothing here knows what a delay is:
+ *
+ *     "knob_curve": "low_focus"        linear | low_focus | high_focus
+ *     "knob_curve_gamma": 2.0          optional strength; default 2
+ *
+ * Calling it "gamma" rather than "angle" or "log" is deliberate: the mapping
+ * is a power law, and it is not logarithmic.
+ */
+
+export const KNOB_CURVE_LINEAR = "linear";
+export const KNOB_CURVE_LOW_FOCUS = "low_focus";
+export const KNOB_CURVE_HIGH_FOCUS = "high_focus";
+
+/** Optional strength. 1 is exactly linear, which is the honest floor. */
+export const KNOB_CURVE_DEFAULT_GAMMA = 2;
+export const KNOB_CURVE_MIN_GAMMA = 1;
+export const KNOB_CURVE_MAX_GAMMA = 8;
+
+/**
+ * `knob_step_mode: "declared"` — the value used by the declared-step branch.
+ * Repeated here because a curve and a declared step are mutually exclusive
+ * (below); keep the two spellings equal if this ever moves.
+ */
+export const KNOB_STEP_MODE_DECLARED = "declared";
+
+function clamp01(x) {
+    if (!(x > 0)) return 0;   /* also catches NaN */
+    return x < 1 ? x : 1;
+}
+
+/**
+ * The strength a curved knob actually runs at: the declared gamma, clamped
+ * into [MIN, MAX] so bad metadata degrades to a legal curve instead of to a
+ * knob that flies off the end of its range. Absent or non-numeric means the
+ * default, not linear — a param that asked for a curve and forgot the number
+ * still gets the curve it named.
+ */
+export function knobCurveGamma(meta) {
+    const g = Number(meta && meta.knob_curve_gamma);
+    if (!isFinite(g)) return KNOB_CURVE_DEFAULT_GAMMA;
+    return Math.min(KNOB_CURVE_MAX_GAMMA, Math.max(KNOB_CURVE_MIN_GAMMA, g));
+}
+
+/**
+ * The curve a knob runs, or null for "step as the range normalises it".
+ *
+ * Declared-step wins outright. A curve is a redistribution of normalised
+ * travel and a declared step is an absolute lattice over the same range;
+ * composing the two asks which of them an ordinary detent of "1" means, and
+ * there is no answer that is not a hidden surprise. So the param is
+ * declared-step and its curve is ignored, rather than silently blended.
+ */
+export function knobCurveMode(meta) {
+    if (!meta) return null;
+    if (meta.knob_step_mode === KNOB_STEP_MODE_DECLARED) return null;
+    const c = meta.knob_curve;
+    if (c === KNOB_CURVE_LOW_FOCUS || c === KNOB_CURVE_HIGH_FOCUS) return c;
+    return null;
+}
+
+/** Normalised value y from control coordinate u. Exact at both ends. */
+export function curveYFromU(u, mode, gamma) {
+    const c = clamp01(u);
+    if (mode === KNOB_CURVE_HIGH_FOCUS) return 1 - Math.pow(1 - c, gamma);
+    return Math.pow(c, gamma);
+}
+
+/** Exact inverse of curveYFromU — the seeding and reversal guarantee. */
+export function curveUFromY(y, mode, gamma) {
+    const c = clamp01(y);
+    if (mode === KNOB_CURVE_HIGH_FOCUS) return 1 - Math.pow(1 - c, 1 / gamma);
+    return Math.pow(c, 1 / gamma);
+}
+
+/**
+ * One curved detent run: `steps` whole steps of du in control space.
+ *
+ * Mirrors the shape of the range-normalised path it replaces — same detent
+ * gate, same fine multiplier, same clamp, same int rounding — so the only
+ * thing that differs is that the step is taken in u and warped back.
+ */
+function curvedKnobStep(state, meta, steps, fine) {
+    const mode = knobCurveMode(meta);
+    const gamma = knobCurveGamma(meta);
+    const min = meta.min;
+    const max = meta.max;
+    const span = max - min;
+    const base = MIN_STEP_RANGE_FRAC * ARC_DELTA_SCALE;
+    const du = fine ? base * 0.1 : base;
+
+    const y0 = clamp01((state.value - min) / span);
+    let u = curveUFromY(y0, mode, gamma) + steps * du;
+    if (!(u >= 0)) u = 0;          /* NaN, or a span that refused to divide */
+    if (u > 1) u = 1;
+
+    let value = min + curveYFromU(u, mode, gamma) * span;
+    value = Math.max(min, Math.min(max, value));
+
+    if (meta.type === "int") {
+        const rounded = Math.round(value);
+        /*
+         * A detent that rounds back onto the value it started from is a dead
+         * knob, and the compressed end of a curve moves less than one whole
+         * unit per detent by design. Take one unit the way the hand was
+         * going rather than let the knob sit there.
+         */
+        if (steps !== 0 && rounded === Math.round(state.value)) {
+            value = Math.max(min, Math.min(max, Math.round(state.value) + Math.sign(steps)));
+        } else {
+            value = rounded;
+        }
+    }
+    state.value = value;
+    return value;
+}
+
 /**
  * Declared-step stepping: an ordinary detent moves exactly one module-declared
  * `step`, and min/max are always EXACTLY reachable — never a float neighbour
@@ -511,6 +667,20 @@ export function knobStep(state, meta, delta, nowMs, fine = false) {
         if (steps === 0) return state.value;
         state.detentAccum -= steps * div;
     }
+    /*
+     * A CURVED knob takes its step in control space instead. Reached after
+     * declared-step (which returns) and after the enum/wide branches above,
+     * so those keep their behaviour exactly; the gate and the fine
+     * multiplier are the same ones the path below uses.
+     *
+     * A curve needs a range it can normalise over. An inverted or empty one
+     * (min == max) has no span to divide by, so it falls through to the
+     * path below rather than inventing one: degenerate metadata keeps the
+     * behaviour it already had, which is the tested one.
+     */
+    if (meta.max > meta.min && knobCurveMode(meta))
+        return curvedKnobStep(state, meta, steps, fine);
+
     /*
      * FINE is a tenth of the coarse step -- except an int, where a tenth of a
      * 1-unit step is 0.1 and Math.round below puts it straight back. That was

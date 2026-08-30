@@ -912,6 +912,12 @@ A `Buses` action row opens the slot's bus list; a bus's own menu opens its
 - **`knob_step_mode: "declared"` opts a param out of range-normalised stepping**
   and into moving by exactly its own `step`, with min/max always exactly
   reachable. Additive and per-param — every existing module is unaffected.
+- **A response curve redistributes a range's travel; it does not resize the
+  range.** `knob_curve` / `knob_curve_gamma` keep a hidden control coordinate
+  that a detent moves uniformly, so the range stays ~200 detents end to end
+  whatever the strength is, and the coarsest detent is bounded at `gamma` x
+  linear — the top of a wide range cannot run away. Mutually exclusive with
+  declared-step.
 ### Recording / capture
 
 Audio capture is shim-side: the Quantized Sampler (Shift+Sample) and Skipback

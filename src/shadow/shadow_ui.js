@@ -1289,6 +1289,23 @@ let shimBootstrapPromptShown = false;
 let hostVolumeKnobTouched = false;
 let hostShiftHeld = false;  /* Local shift tracking - shim tracking doesn't work in overtake mode */
 let hostMuteHeld = false;   /* Mute (CC 88) held — used as a modifier for Mute+JogClick bypass */
+let hostDeleteHeld = false; /* Delete/"X" (CC 119) held — modifier for Delete+JogClick device removal */
+
+/*
+ * Shift Lock: double-tap Shift toggles a latch that OR's into every existing
+ * Shift-layer read, so no command re-implements "shift or locked" itself.
+ * isShiftHeld() (the SHM-backed read the vast majority of call sites use) and
+ * hostEffectiveShiftHeld() (the small overtake-mode-local-tracking group)
+ * are the only two places that read shiftLocked — see their definitions.
+ * Session-only: nothing here is persisted, so a reboot always starts unlocked.
+ */
+let shiftLocked = false;
+/* hostEffectiveShiftHeld folds the lock into the overtake-mode-local Shift
+ * tracker the same way isShiftHeld() folds it into the SHM-backed one — one
+ * OR, not duplicated at each of that tracker's few read sites. */
+function hostEffectiveShiftHeld() { return hostShiftHeld || shiftLocked; }
+let lastShiftPressAtMs = 0;
+const SHIFT_DOUBLE_TAP_MS = 320;
 
 /* Deferred module init - clear LEDs and wait before calling init() */
 let overtakeInitPending = false;
@@ -6294,8 +6311,12 @@ let masterOverwriteFromKeyboard = false;
 let masterShowingNamePreview = false;
 let masterNamePreviewIndex = 0;
 
-/* Shift state - read from shim via shadow_get_shift_held() */
+/* Shift state - read from shim via shadow_get_shift_held(), OR'd with the
+ * double-tap Shift Lock latch (see shiftLocked's own doc comment). Physical
+ * Shift keeps working exactly as before; the lock just holds it "down" until
+ * double-tapped again. */
 function isShiftHeld() {
+    if (shiftLocked) return true;
     if (typeof shadow_get_shift_held === "function") {
         return shadow_get_shift_held() !== 0;
     }
@@ -15279,6 +15300,27 @@ function enterMasterFxModuleSelect(fxSlot) {
  * thing left is that the module write takes a DSP PATH rather than a module id
  * — the shim loads master positions by path.
  */
+/*
+ * Remove a populated Master FX position directly, without going through the
+ * interactive module picker.
+ *
+ * This is the SAME removal the picker's own "None" pick performs inside
+ * applyMasterFxModuleSelection() below (applyPickerChoiceToChain turning
+ * "None" into a `remove` shape, MASTER_CHAIN_TARGET.setConfig, writeChainShape
+ * sending the verb) — factored out so a direct caller (Delete+JogClick) can
+ * reach it without faking picker selection state first. The module-write
+ * branch in applyMasterFxModuleSelection is deliberately not reproduced here:
+ * it only runs when the shape ISN'T a removal, which a removal never is.
+ */
+function removeMasterFxComponent(comp) {
+    const choice = applyPickerChoiceToChain(masterFxChainConfig(), comp.key, "");
+    MASTER_CHAIN_TARGET.setConfig(choice.cfg);
+    if (choice.shape) writeChainShape(MASTER_CHAIN_TARGET, choice.shape);
+    resetLfoTargetLabels();
+    saveMasterFxChainConfig();
+    needsRedraw = true;
+}
+
 function applyMasterFxModuleSelection() {
     const comps = masterFxChainComponents();
     const comp = comps[selectedMasterFxComponent];
@@ -24866,6 +24908,16 @@ function handleSelect() {
                         break;
                     }
 
+                    /* Delete("X")+JogClick: remove a populated MFX slot directly,
+                     * through the same shape-edit path the picker's own "None"
+                     * pick uses (removeMasterFxComponent). */
+                    if (hostDeleteHeld && moduleData && moduleData.module) {
+                        const removedLabel = selectedComp.label;
+                        removeMasterFxComponent(selectedComp);
+                        announce(`Removed ${removedLabel}`);
+                        break;
+                    }
+
                     if (moduleData && moduleData.module) {
                         /* Module is loaded - try hierarchy editor first */
                         const fxAt = masterFxPositionOf(selectedMasterFxComponent);
@@ -24927,6 +24979,19 @@ function handleSelect() {
                 if (hostMuteHeld && moduleData && moduleData.module) {
                     toggleChainComponentBypass(slotChainTarget(selectedSlot),
                                                comp.key, comp.label);
+                    break;
+                }
+
+                /* Delete("X")+JogClick: remove a populated module directly,
+                 * through the SAME call the "Remove Module" grid-menu row uses
+                 * (applyChainComponentPick(..., "", null) — its own comment
+                 * calls out that a picker "None" and a menu Remove must stay
+                 * the one path, not two that can drift). */
+                if (hostDeleteHeld && moduleData && moduleData.module) {
+                    const removedLabel = comp.label;
+                    setUserPresetRecord(selectedSlot, getComponentParamPrefix(comp.key), null);
+                    applyChainComponentPick(selectedSlot, comp.key, "", null);
+                    announce(`Removed ${removedLabel}`);
                     break;
                 }
 
@@ -30858,13 +30923,40 @@ globalThis.onMidiMessageInternal = function(data) {
         return;
     }
 
-    /* Always track shift state (CC 49), even when canvas or other views consume MIDI */
+    /* Always track shift state (CC 49), even when canvas or other views consume MIDI.
+     *
+     * Double-tap detection lives on this same rising edge, since it is the one
+     * place a physical Shift press is guaranteed to be seen regardless of view
+     * or mode. Momentary Shift is unaffected either way: hostShiftHeld (and the
+     * SHM-backed state isShiftHeld() reads) already goes true on THIS press,
+     * before this code asks whether it was a double-tap — so holding Shift
+     * always works immediately, and only a SECOND press within the window
+     * additionally toggles the lock. A slow second tap just starts a new
+     * measuring window rather than locking. */
     if ((status & 0xF0) === 0xB0 && d1 === 49) {
+        const wasDown = hostShiftHeld;
         hostShiftHeld = (d2 > 0);
+        if (hostShiftHeld && !wasDown) {
+            const now = Date.now();
+            if (now - lastShiftPressAtMs <= SHIFT_DOUBLE_TAP_MS) {
+                shiftLocked = !shiftLocked;
+                lastShiftPressAtMs = 0; /* consumed -- a third quick press starts fresh, not a re-toggle */
+                announce(shiftLocked ? "Shift lock on" : "Shift lock off");
+                needsRedraw = true;
+            } else {
+                lastShiftPressAtMs = now;
+            }
+        }
     }
     /* Always track mute state (CC 88) — modifier for Mute+JogClick module-bypass shortcut */
     if ((status & 0xF0) === 0xB0 && d1 === 88) {
         hostMuteHeld = (d2 > 0);
+    }
+    /* Always track delete state (CC 119, the "X" button) — modifier for
+     * Delete+JogClick device removal, same shape as Mute+JogClick bypass
+     * above. */
+    if ((status & 0xF0) === 0xB0 && d1 === 119) {
+        hostDeleteHeld = (d2 > 0);
     }
 
     /* Debug: log all MIDI when in overtake mode to diagnose escape issues */
@@ -31022,7 +31114,7 @@ globalThis.onMidiMessageInternal = function(data) {
          * This runs BEFORE passing MIDI to the module, ensuring escape always works */
         if ((status & 0xF0) === 0xB0 && d1 === MoveMainButton && d2 > 0) {
             debugLog(`JOG CLICK: hostShift=${hostShiftHeld} volTouch=${hostVolumeKnobTouched}`);
-            if (hostShiftHeld && hostVolumeKnobTouched) {
+            if (hostEffectiveShiftHeld() && hostVolumeKnobTouched) {
                 debugLog("HOST: Shift+Vol+Jog detected, exiting overtake mode");
                 if (toolOvertakeActive) {
                     exitToolOvertake();
@@ -31038,7 +31130,7 @@ globalThis.onMidiMessageInternal = function(data) {
          * Shift+Back: full exit (unload module).
          * Skip while co-run is active: the chain editor claims Back. */
         if ((status & 0xF0) === 0xB0 && d1 === MoveBack && d2 > 0 && overtakeSuspendKeepsJs && !coRunUiActive()) {
-            if (hostShiftHeld) {
+            if (hostEffectiveShiftHeld()) {
                 debugLog("HOST: Shift+Back → full exit (suspend_keeps_js module)");
                 if (toolOvertakeActive) exitToolOvertake();
                 else exitOvertakeMode();
@@ -31089,11 +31181,11 @@ globalThis.onMidiMessageInternal = function(data) {
                  * Shift+Click in CHAIN_EDIT → handleShiftSelect (enter
                  * component edit). Plain Click → handleSelect. */
                 runCoRunChainEdit(function() {
-                    if (hostShiftHeld && view === VIEWS.CHAIN_EDIT && selectedChainComponent >= 0) {
+                    if (hostEffectiveShiftHeld() && view === VIEWS.CHAIN_EDIT && selectedChainComponent >= 0) {
                         handleShiftSelect();
-                    } else if (hostShiftHeld && view === VIEWS.MASTER_FX && masterFxSelectedIsModule()) {
+                    } else if (hostEffectiveShiftHeld() && view === VIEWS.MASTER_FX && masterFxSelectedIsModule()) {
                         enterMasterFxModuleSelect(masterFxPositionOf(selectedMasterFxComponent));
-                    } else if (hostShiftHeld && view === VIEWS.BUS_CHAIN && !selectingBusModule) {
+                    } else if (hostEffectiveShiftHeld() && view === VIEWS.BUS_CHAIN && !selectingBusModule) {
                         enterBusModuleSelect();
                     } else {
                         handleSelect();

@@ -256,5 +256,7 @@ Promise.all([
     if (lawOf(ctl) !== (law ? `${law.mode}@${law.gamma}` : "linear"))
       fail("the deferred settle never landed after release: " + lawOf(ctl));
   }
+
+  console.log("PASS knob-law contract refresh: an enum that republishes knob_step_frac/knob_curve re-arms the settle");
 }).catch((e) => { console.log("FAIL: " + (e && e.stack ? e.stack : e)); process.exit(1); });
 '

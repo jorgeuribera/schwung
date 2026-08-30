@@ -155,16 +155,47 @@ export function landmarkEnabled(meta) {
 }
 
 /**
+ * Whole-note-fraction/bar-count landmarks are a TIME measurement, but a
+ * param's own display value need not be one: WET2/TUNNEL's Sample
+ * resolution shows a sample count, not a duration. This is the one place a
+ * raw display value crosses that boundary, both directions, so a module
+ * that wants landmarks on a sample-count view declares
+ * `{ "unit": "smp", "tempo_landmarks": true, "sample_rate": 44100 }` (rate
+ * optional — Move's audio pipeline is fixed at 44100 Hz, so that is the
+ * fallback, not a guess) and nothing else here needs to know.
+ *
+ * Generic and reusable: no module name appears in this file.
+ */
+function sampleRateOf(meta) {
+    const sr = meta && meta.sample_rate;
+    return sr > 0 ? sr : 44100;
+}
+function isSamplesUnit(meta) {
+    const u = meta && meta.unit;
+    return u === "smp" || u === "sample" || u === "samples";
+}
+
+/**
  * The param's value in milliseconds, or null if it is not a readable number.
  *
- * Unit-aware so a param declared in seconds is not read as milliseconds.
+ * Unit-aware so a param declared in seconds is not read as milliseconds,
+ * and a param declared in samples is converted via its own (or the
+ * hardware-default) sample rate rather than being read as milliseconds.
  */
 function valueMs(raw, meta) {
     const n = Number(raw);
     if (!isFinite(n)) return null;
     const u = meta && meta.unit;
     if (u === "sec" || u === "s" || u === "seconds") return n * 1000;
+    if (isSamplesUnit(meta)) return (n * 1000) / sampleRateOf(meta);
     return n;
+}
+
+/** Inverse of valueMs, for the samples case only — see nearestLandmark's
+ * offset computation for why ms/sec keep their existing (ms-rounded)
+ * offset behavior unchanged while samples gets a truthful native-unit one. */
+function msToSamples(ms, meta) {
+    return (ms * sampleRateOf(meta)) / 1000;
 }
 
 /**
@@ -195,11 +226,25 @@ export function nearestLandmark(raw, meta, bpm) {
     }
     if (!best) return null;
 
-    /* Proportional: the same 5% of the landmark's own length everywhere. */
+    /* Proportional: the same 5% of the landmark's own length everywhere.
+     * Matching happens in TIME regardless of display unit -- "nearest" is a
+     * musical judgment, not a native-unit one. */
     if (bestDist > best.ms * LANDMARK_RELEVANCE) return null;
 
-    const offset = ms - best.ms;
-    const rounded = Math.round(offset);
+    /*
+     * The OFFSET shown beside the label is a different question: which unit
+     * makes it truthful. A samples-declared param already reads as whole
+     * samples, so its offset is rounded to the nearest WHOLE SAMPLE (e.g.
+     * "-5" means 5 samples away, not a rounded-to-the-nearest-millisecond
+     * fiction). A rhythmic duration will almost never land on an exact
+     * sample, so this offset is close to but not the same number a
+     * ms-rounded one would show -- that is the truthful part, not a bug.
+     * ms/sec params keep their original ms-rounded offset unchanged (every
+     * existing test pins that shape).
+     */
+    const rounded = isSamplesUnit(meta)
+        ? Math.round(Number(raw) - msToSamples(best.ms, meta))
+        : Math.round(ms - best.ms);
     return {
         label: best.label,
         aliases: best.aliases,

@@ -243,6 +243,18 @@ export function buildMetaIndex({ hierarchy, chainParams } = {}) {
  * of metadata an ordinary enum turn can republish, which is what
  * armContractSettle is for.
  *
+ * `knob_step_mode` (KNOB_STEP_MODE_DECLARED) belongs in the same class for
+ * the same reason: a module offering an "exact declared unit" edit speed
+ * alongside Micro/Normal/Long republishes THIS field instead of
+ * `knob_step_frac`/`knob_curve` when that option is picked — dropping a
+ * fraction-of-range speed and a response curve in favor of moving exactly
+ * one legal unit per detent is exactly as much a knob-law change as
+ * switching curve or speed within the fraction-of-range family, and without
+ * this the settle would not re-arm on that specific transition (a param
+ * leaving `knob_step_frac`/`knob_curve` behind entirely, rather than
+ * changing their values, would otherwise look like "nothing to see here" to
+ * this function).
+ *
  * This is NOT the moving-window refresh that stalled on hardware, and the
  * difference is the whole point. That one re-read the contract WHILE THE
  * TIME KNOB WAS MOVING, continuously, per gesture, because the metadata
@@ -258,7 +270,8 @@ export function declaresKnobLaw(metaIndex) {
     for (const k of keys) {
         const m = metaIndex.get(k);
         if (!m) continue;
-        if (m.knob_step_frac !== undefined || m.knob_curve !== undefined) return true;
+        if (m.knob_step_frac !== undefined || m.knob_curve !== undefined ||
+            m.knob_step_mode !== undefined) return true;
     }
     return false;
 }

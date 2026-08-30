@@ -136,6 +136,36 @@ import("./src/shared/knob_engine.mjs").then((m) => {
     if (v !== 1) fail(`declared int fine step floored below 1: ${v}`);
   }
 
+  /* ---- a real fleet shape: a very FINE declared step over a wide range --
+   *
+   * WET2/TUNNEL'"'"'s Unit edit speed reuses Fractional resolution'"'"'s own
+   * already-declared display precision (0.001 ms) as its legal grid over a
+   * 0..4000 range -- ~4,000,000 lattice points end to end. This is not a
+   * hypothetical: it is the exact shape that mode emits. Pin that it behaves
+   * exactly like any other declared step, not a special case that happens to
+   * work for round numbers.
+   */
+  {
+    const meta = { type: "float", min: 0, max: 4000, step: 0.001, knob_step_mode: "declared" };
+    const st = knobInit(0);
+    let v;
+    for (let i = 0; i < 5; i++) v = knobStep(st, meta, 1, 1000 + i);
+    if (!close(v, 0.005)) fail(`fine declared step over a wide range: got ${v}, want 0.005`);
+    const back = knobStep(st, meta, -1, 2000);
+    if (!close(back, 0.004)) fail(`reversing a fine declared step: got ${back}, want 0.004`);
+    /* Shift-fine is a tenth of THIS step (0.0001), not of the range. */
+    const fine = knobStep(st, meta, 1, 3000, true);
+    if (!close(fine, 0.004 + 0.0001)) fail(`fine declared step under Shift: got ${fine}`);
+  }
+  /* Endpoints of that same wide/fine shape are still exact -- the lattice
+   * model does not lose precision walking from one end to the other. */
+  {
+    const meta = { type: "float", min: 0, max: 4000, step: 0.001, knob_step_mode: "declared" };
+    const st = knobInit(4000);
+    const v = knobStep(st, meta, -1, 1000);
+    if (!close(v, 3999.999)) fail(`stepping down from max with a fine declared step: got ${v}`);
+  }
+
   /* ---- absent knob_step_mode is completely unaffected ------------------- */
   {
     const meta = { type: "float", min: 0, max: 1, step: 0.3 };

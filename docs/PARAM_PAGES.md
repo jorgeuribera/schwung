@@ -1220,6 +1220,20 @@ are envelopes, smoothing times and fade times, and none of them are notes. The
 declared unit is honoured (`sec`/`s` are converted to ms) so a param is never
 read in the wrong scale.
 
+#### A sample-count view is landmark-eligible too, via a declared conversion
+
+A landmark is a TIME measurement, but a param's own display value need not
+be one: `unit: "smp"` (or `sample`/`samples`) plus an optional `sample_rate`
+(default 44100, Move's fixed audio rate) converts through milliseconds for
+the musical-distance judgment — matching happens in time regardless of
+display unit — and the **offset is rounded in the param's own native unit**
+(whole samples), never silently rounded to the nearest millisecond. A value
+5 samples off a landmark is ≈0.11 ms away; an ms-rounded offset would show
+`0` and falsely read as exact. This is the generic mechanism, usable by any
+module — no module name appears in `tempo_landmarks.mjs`, and the fleet's
+first consumer (a delay module's Sample resolution) is documented at that
+consumer's own repo, not here.
+
 #### The set, and the alias rule
 
 All durations are fractions of a **whole note**, because that is the one
@@ -1314,6 +1328,26 @@ Cost is `O(1)` per gesture, not per detent: every detent re-arms the same
 deadline, so a fast spin down a seven-option curve list costs one contract
 read, not seven. Asserted in
 `tests/host/test_knob_law_contract_refresh.sh`.
+
+`declaresKnobLaw()` also recognises `knob_step_mode` (the declared-unit
+axis below), not just `knob_step_frac`/`knob_curve` — a module offering an
+exact-unit edit speed alongside a fraction-of-range one **drops**
+`knob_step_frac`/`knob_curve` entirely rather than changing their values
+when that option is picked, and that is exactly as much a knob-law change
+as switching within the fraction-of-range family.
+
+### `knob_step_mode: "declared"` composes with a live control-law switch
+
+The declared-step axis (below) and the enum-republishes-a-law mechanism
+above are independent, but a module can put them on the SAME enum: an Edit
+Speed option that means "walk exactly one legal unit per detent" republishes
+`knob_step_mode: "declared"` + the unit as `step`, dropping `knob_step_frac`/
+`knob_curve` for as long as that option is selected, and restores them the
+moment a different option is picked. The underlying stored value of
+whatever OTHER control law param exists (e.g. a separate response-curve
+enum) is untouched either way — only which law is *applied* changes, never
+what is *stored* — so leaving and returning to a fraction-of-range option
+re-applies exactly what was selected before, with no extra bookkeeping.
 
 ### A momentary fires from the KNOB too, and it LATCHES per gesture
 

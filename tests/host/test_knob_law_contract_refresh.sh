@@ -130,6 +130,13 @@ Promise.all([
     const curve = { keys: ["a"], get: () => ({ knob_curve: "low_focus" }) };
     if (M.declaresKnobLaw(curve) !== true)
       fail("knob_curve alone declares a law");
+    /* An exact-declared-unit edit speed republishes knob_step_mode instead
+       of knob_step_frac/knob_curve -- dropping the range-fraction law
+       entirely, not merely changing its value, is exactly as much a law
+       change and must re-arm the settle just the same. */
+    const unit = { keys: ["a"], get: () => ({ knob_step_mode: "declared" }) };
+    if (M.declaresKnobLaw(unit) !== true)
+      fail("knob_step_mode alone declares a law");
   }
 
   /* ---- 1. THE BUG: turning the curve enum republishes the law ---------- */

@@ -1284,7 +1284,21 @@ A `Buses` action row opens the slot's bus list; a bus's own menu opens its
 - **An enum that republishes a knob law re-arms the contract settle**, gated on
   `declaresKnobLaw()` so a contract with no `knob_curve`/`knob_step_frac` pays
   nothing. Discrete and O(1) per gesture after the hand stops — not a refresh
-  while the time knob is moving, which is the thing that failed.
+  while the time knob is moving, which is the thing that failed. `declaresKnobLaw`
+  also fires on `knob_step_mode` — an enum that drops the fraction-of-range law
+  entirely for an exact-declared-unit one is exactly as much a law change.
+- **The selected-header's right side must never crop a musical token.**
+  `withLandmark()`'s `value + "  " + token` join has no pixel-width awareness
+  of its own; plain char-slicing chopped `"41.105 ms  1/32T"` down to
+  `"41.105 ms  1"` on a tight header. `fitHeaderRight`/`atomicTokenTiers`
+  (`render_page_movy.mjs`) pick the widest fallback tier that fits — full,
+  unit dropped, offset dropped, value alone — each carrying the COMPLETE
+  token or none of it.
+- **A landmark can live on a sample-count view, not just a millisecond one.**
+  `unit: "smp"` + optional `sample_rate` (default 44100) converts through ms
+  for the musical-distance judgment, then reports the offset in whole SAMPLES
+  — never silently rounded to the nearest ms, which would mislabel "5 samples
+  off" as "exactly on it".
 ### Recording / capture
 
 Audio capture is shim-side: the Quantized Sampler (Shift+Sample) and Skipback
@@ -1507,6 +1521,8 @@ Long-press is suppressed once the volume knob is touched during a track press (s
 
 **While shadow UI shown** (any mode):
 - **Mute + Jog Click** on focused chain/MFX module — toggle bypass. Audio passes through; MIDI FX become passthrough; synth render silenced while MIDI flows (state advances, tails ring out, clean unbypass). 4-row 'B' glyph above the module box.
+- **Delete ("X", CC 119) + Jog Click** on a focused, populated chain/MFX module — remove it directly, through the exact same call the "Remove Module" menu row / picker "None" pick already use (`applyChainComponentPick`/`removeMasterFxComponent`), never a new removal path. `hostDeleteHeld` tracked unconditionally, same shape as Mute's own modifier tracking.
+- **Double-tap Shift** — toggles a session-only Shift Lock (OR'd into `isShiftHeld()`/`hostEffectiveShiftHeld()`, the two places every Shift-layer command already reads from — nothing re-implements the OR itself). Momentary Shift is unaffected: the press that might become a double-tap already goes true immediately. No physical LED control (Shift's LED has no existing Schwung ownership/restore mechanism, unlike the knob rings — screen/announce feedback only until one is proven safe).
 - **Mute + Track 1–4** — slot mute. **Shift + Mute + Track 1–4** — slot solo.
 - **Shift+- / Shift++** — latch (tap) or hold the active scene's A / B snapshot for editing.
 

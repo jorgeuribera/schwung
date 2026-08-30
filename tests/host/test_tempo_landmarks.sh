@@ -280,6 +280,63 @@ import("./src/shared/param_pages/tempo_landmarks.mjs").then(async (m) => {
   eq(STRAIGHT_DENOMS.length, 8, "eight straight values");
   eq(BAR_COUNTS.length, 10, "ten bar landmarks");
 
+  /* ---- 15. Sample-unit landmarks: generic, not module-specific. -------
+   *
+   * A param whose display value is a SAMPLE COUNT (unit: "smp") is landmark-
+   * eligible exactly like an ms one -- matching happens in time regardless
+   * of display unit -- but the printed OFFSET must be truthful in the
+   * params own native unit (whole samples), not a rounded-to-the-nearest-
+   * millisecond fiction. This is the mechanism any module can opt into by
+   * declaring unit + tempo_landmarks (+ an optional sample_rate); nothing
+   * here names a module. */
+  {
+    const SMP = { type: "int", min: 0, max: 176400, step: 1, unit: "smp", tempo_landmarks: true };
+    /* 1/4 note at 120 BPM = 500 ms = 22050 samples at 44100 Hz, exactly. */
+    const exact = nearestLandmark(22050, SMP, 120);
+    ok(exact && exact.label === "1/4" && exact.offsetMs === 0 && exact.exact,
+       "an exact sample-domain landmark reports zero offset, not a near-miss");
+    eq(nearestLandmark(22045, SMP, 120).offsetMs, -5, "5 samples short reports -5, not -0 rounded from ms");
+    eq(nearestLandmark(22055, SMP, 120).offsetMs, 5, "5 samples over reports +5, not 0 rounded from ms");
+    /* The same 5 real samples is ~0.113 ms -- an ms-rounded offset would
+     * have reported 0 here. This is the specific "do not lie" case: a
+     * value 5 samples off the landmark must never format as if it sat ON
+     * the landmark. */
+    ok(nearestLandmark(22045, SMP, 120).text !== "1/4", "5 samples off must not print as exactly on the landmark");
+
+    /* Explicit sample_rate is honoured over the 44100 Hz fallback: half the
+     * rate means half as many samples for the same musical duration. */
+    const SMP_HALF_RATE = { ...SMP, sample_rate: 22050 };
+    eq(nearestLandmark(11025, SMP_HALF_RATE, 120).offsetMs, 0,
+       "an explicit sample_rate is used, not the 44100 Hz fallback (11025 samples @ 22050 Hz = 500 ms = 1/4)");
+    eq(nearestLandmark(11025, SMP, 120).label, "1/8",
+       "the SAME raw count at the fallback 44100 Hz rate is a different musical duration (11025 samples = 250 ms)");
+
+    /* Varying BPM moves the landmark set under a fixed sample count, same
+     * as it already does for ms params. */
+    const atSlow = nearestLandmark(22050, SMP, 60);   /* 1/4 @ 60bpm = 1000ms = 44100 smp -- 22050 is now 1/8 */
+    ok(atSlow && atSlow.label === "1/8" && atSlow.exact,
+       "BPM changes which landmark a fixed sample count lands on, exactly like ms params");
+
+    /* Resolution absent (no tempo_landmarks:true) stays silent -- opt-in
+     * still applies to the samples path, no special-casing bypasses it. */
+    const SMP_NO_OPT = { type: "int", min: 0, max: 176400, step: 1, unit: "smp" };
+    eq(nearestLandmark(22050, SMP_NO_OPT, 120), null, "samples without tempo_landmarks:true stays opted out");
+
+    /* No BPM still hides landmarks cleanly for the samples path too. */
+    eq(nearestLandmark(22050, SMP, null), null, "no tempo hides samples-domain landmarks too");
+
+    /* Hostile input stays quiet here as well. */
+    for (const v of [-500, 0, 1e9, Infinity, -Infinity]) {
+      const r = nearestLandmark(v, SMP, 120);
+      ok(r === null || isFinite(r.offsetMs), "hostile sample value " + v + " must not produce a broken offset");
+    }
+
+    /* withLandmark composes exactly like the ms path -- same helper, same
+     * two-space join, so the grid and list cannot disagree here either. */
+    eq(withLandmark("22045 smp", 22045, SMP, 120), "22045 smp  1/4 -5",
+       "withLandmark composes truthfully for a samples-unit value");
+  }
+
   console.log("tempo landmarks: " + checks + " checks passed");
 }).catch((e) => { console.log("FAIL: " + (e && e.message ? e.message : e)); process.exit(1); });
 '

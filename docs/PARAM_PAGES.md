@@ -59,6 +59,47 @@ byte-identical against `tests/fixtures/movy-geom-baseline.txt`
 Preview it without deploying: `node tools/param-pages/preview_knob_card.mjs
 <module-id> --knob N [--short] [--png DIR --scale 4]`.
 
+### `knob_step_mode: "declared"` steps by the module's own unit, not a range fraction
+
+The unified knob model (`shared/knob_engine.mjs`) steps every float/int knob by
+a fixed fraction of its own range (`MIN_STEP_RANGE_FRAC`), never by the
+module's declared `step` — see the file's own header comment for why that
+unification happened and what it replaced. That is the right feel for a sweep
+control, and it is wrong for a parameter whose declared step IS the meaningful
+unit: a value meant to land on clean tenths of a millisecond reads as "step:
+0.1" to its author and as an arbitrary 1%-of-range fraction to the default
+engine, which will never actually produce 0.1, 0.2, 0.3 ...
+
+A param declaring `knob_step_mode: "declared"` opts out of range-normalisation
+for that one param only. An ordinary detent then moves exactly the declared
+`step`, with no acceleration curve and no narrow-int-range gating (a 2..16-wide
+int under `NARROW_RANGE_MAX` steps 1:1 in declared mode, where the default
+engine gates it at `ENUM_DELTA_DIV` detents per unit). Shift-fine is a tenth of
+the declared step, floored at one whole unit for an int — the same clause the
+default engine needed for the same reason (a tenth of a 1-unit int step rounds
+straight back to zero).
+
+**min and max are always EXACTLY reachable.** Stepping by repeated float
+addition and clamping afterwards — fine for the default engine, whose whole
+point is an approximate sweep — can leave a value a few ULPs under a ceiling
+that is not an exact multiple of the step (`min=0, max=1, step=.3`: 0, .3, .6,
+.9, and a naive fourth step overshoots to 1.2) forever comparing unequal to it.
+`declaredLatticeStep` instead steps an INTEGER index and treats `max` as one
+extra, virtual grid point past the last clean multiple of `step` when the two
+do not coincide; landing there always reads back as the exact `max` the module
+declared, and reversing off it drops exactly one step, immediately — never a
+skipped step and never a stuck one. `min` needs no equivalent treatment: index
+0 times any step is exactly 0, so it is always exactly `min` with no
+floating-point error possible.
+
+This is a per-param, additive branch in `knobStep` — it does not touch
+`perDetentStep`, `detentsPerStep` or `MIN_STEP_RANGE_FRAC`, so a param opting
+in cannot change any other param's default feel, and every existing module is
+byte-for-byte unaffected. `tests/host/test_declared_knob_step.sh` pins the
+exact-step and exact-endpoint behavior; the existing
+`tests/shadow/test_knob_engine.sh` suite (none of whose fixtures declare
+`knob_step_mode`) pins that the default path is untouched.
+
 ### Every enum opens a LIST — except at TWO options, where the click FLIPS it
 
 A picker over two items is a menu whose entire content is the value already

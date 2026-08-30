@@ -34,7 +34,7 @@ import { resolveChildKey, childIndexParam, childIndexToWire, childIndexFromWire,
          childName, childLabel, childPressParam } from "./child_key.mjs";
 import { focusParamOf, voicesOf, voiceIndexFromLevel,
          voiceIndexFromWire, padLayoutOf, focusToken, focusPressParamOf } from "./voices.mjs";
-import { buildMetaIndex, inferFromValue, isTurnable, flipsOnClick, enumIndexOf, KIND_ENUM, KIND_OPAQUE
+import { buildMetaIndex, declaresKnobLaw, inferFromValue, isTurnable, flipsOnClick, enumIndexOf, KIND_ENUM, KIND_OPAQUE
 } from "./param_meta.mjs";
 import { renderPage, renderPicker, renderHint, LAYOUT_DIAL } from "./render_page.mjs";
 import { renderPageMovy, drawFooter, drawHeader as drawHeaderMovy, drawBankBar,
@@ -4289,6 +4289,21 @@ export function createController(io = {}) {
          */
         const releaseCommit = meta.commit === "release";
         if (releaseCommit) s.releaseTurnMs[key] = t;
+        /*
+         * An enum whose module derives other params' KNOB CONTROL LAW from it
+         * — an Edit Speed or a Time Curve — has just republished that law.
+         *
+         * The pickers below already do this for the same reason (a chosen
+         * soundfont republishes its presets). Booking the settle here rather
+         * than at the write is deliberate: the write is THROTTLED, and the
+         * pending branch below would otherwise never book it at all, so a
+         * curve change made by a fast spin would land on the device and
+         * never reach the metadata that describes how the knob moves.
+         *
+         * Bounded, and gated on the contract actually declaring a control
+         * law, so a module that does not use this metadata pays nothing.
+         */
+        if (meta.kind === KIND_ENUM && declaresKnobLaw(s.metaIndex)) armContractSettle();
         /* Throttled — see SETPARAM_THROTTLE_MS. A miss is never lost: it is
          * left in pendingWrite for tick() to flush once the window passes,
          * and onKnobTouch(false) flushes immediately on release. */
@@ -4367,6 +4382,9 @@ export function createController(io = {}) {
         delete s.pendingWrite[key];
         delete s.knobStates[key];
         setParam(fullKey(key), wire);
+        /* Same reason as the turn path: this enum may be the one other
+         * params derive their knob control law from. */
+        if (declaresKnobLaw(s.metaIndex)) armContractSettle();
         replanIfCondition(key);
         return wire;
     }

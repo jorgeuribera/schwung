@@ -1441,6 +1441,35 @@ A landmark is only ever appended to the **header** and the **list row**. A
 30px cell label band has room for a value and nothing else, and a landmark
 that permanently ate cell space would be furniture.
 
+### An enum that republishes a knob law re-arms the contract settle
+
+A module may derive one param's control law from another param — an Edit
+Speed or Time Curve enum that rewrites `knob_step_frac` / `knob_curve` /
+`knob_curve_gamma` on the time params. Turning that enum therefore
+**republishes the contract**, exactly as picking a soundfont does.
+
+So an enum turn calls `armContractSettle()` — but only where the contract
+actually declares a control law (`declaresKnobLaw()` in `param_meta.mjs`).
+A module that does not use this metadata pays nothing at all; the gate is
+per contract, not per gesture.
+
+This is **not** the moving-window refresh, and the difference is the point:
+
+* that one re-read while the time knob was *moving*, continuously, because
+  the metadata depended on that knob's own current value — so the window
+  had to be re-anchored under the hand, and every re-anchor was a chance to
+  clamp or to jump;
+* this re-reads because a **different, discrete** control was turned, once,
+  after the hand stops. `maybeSettleContract` defers while a finger is down
+  and requires two agreeing readings. The value itself never enters
+  metadata, so there is nothing to re-anchor and nothing that can move a
+  value.
+
+Cost is `O(1)` per gesture, not per detent: every detent re-arms the same
+deadline, so a fast spin down a seven-option curve list costs one contract
+read, not seven. Asserted in
+`tests/host/test_knob_law_contract_refresh.sh`.
+
 ### A momentary fires from the KNOB too, and it LATCHES per gesture
 
 A trigger is `access: "write"` on an ordinary enum — there is no `trigger` type

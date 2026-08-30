@@ -1230,6 +1230,76 @@ neighbour, and a cell cannot change widget as it is turned. A host reading that
 fails the same test at draw time falls back to the option or the number.
 `tests/host/test_big_value_declared.sh`.
 
+### A response curve redistributes travel; it does not change the range
+
+`knob_curve` / `knob_curve_gamma` on a `chain_params` entry, in
+`src/shared/knob_engine.mjs`. Opt-in and additive: a param that declares
+neither is stepped exactly as before.
+
+The knob keeps a hidden control coordinate `u` in `[0,1]` that one detent moves
+by a fixed amount, and the parameter is a monotonic `f` laid over the declared
+range:
+
+```
+(no knob_curve)   y = u                     range-normalised, as shipped
+low_focus         y = u^gamma               more travel near the MINIMUM
+high_focus        y = 1 - (1-u)^gamma       more travel near the MAXIMUM
+```
+
+`u` is never stored — it is recovered from the current value with the exact
+inverse (`u = y^(1/gamma)`, `1-(1-y)^(1/gamma)`), the same trick
+declared-step uses to avoid a second source of truth. That is what buys the
+properties a relative encoder needs: seeding from any standing value is exact
+(so the first detent continues from where the sound already is), reversal just
+moves `u` the other way, and clamping `u` to `[0,1]` makes min and max
+**exactly** reachable rather than approached.
+
+**The number of detents end to end does not change.** Because a detent moves
+`u` by a constant, the range is always ~200 detents whatever `gamma` is; the
+curve only decides where those detents are spent. That is also the safety
+property, and it is the one worth remembering: `dy/du` peaks at `gamma`, so
+**the coarsest detent anywhere on the dial is at most `gamma` times the
+linear one.** The top of a wide range cannot run away. A moving min/max
+window had no such bound, which is why it stalled on hardware — see
+`EXPERIMENTAL_LIVE_PARAMS.md` on the archived branch.
+
+Measured on a `0..4000` range, per-detent travel in ms:
+
+| at | linear | low γ1.6 | low γ2.0 | low γ2.4 |
+|---|---|---|---|---|
+| 0 | 20.00 | 0.83 | 0.10 | 0.01 |
+| 10 | 20.00 | 3.59 | 2.10 | 1.52 |
+| 100 | 20.00 | 8.14 | 6.42 | 5.67 |
+| 500 | 20.00 | 14.75 | 14.24 | 14.39 |
+| 1000 | 20.00 | 19.10 | 20.10 | 21.52 |
+| 3000 | 20.00 | 28.78 | 34.74 | 40.74 |
+
+Detents to cross `0→10` ms: 1 linear, 5 at γ1.6, 11 at γ2.0, 17 at γ2.4. The
+whole `1000→4000` sweep: 150 linear, 116 / 100 / 88. So the fine end gains
+roughly an order of magnitude and the top costs about 2x per detent — the
+trade is bounded, not open-ended.
+
+Notes for module authors:
+
+- **`gamma` is a power-law exponent, so it is called `gamma`.** It is not
+  logarithmic, and it is not an angle. Omit it and you get `2`.
+- It is clamped to `[1, 8]`, so bad metadata degrades to a legal curve
+  instead of to a knob that flies off the end of its range. `gamma: 1` is
+  exactly linear, for both families.
+- **A curve and `knob_step_mode: "declared"` are mutually exclusive.**
+  Declared-step wins outright and the curve is ignored. A curve is a
+  redistribution of *normalised* travel; a declared step is an absolute
+  lattice over the same range. Composing them asks which of the two an
+  ordinary detent of "1" means, and there is no answer that is not a hidden
+  surprise.
+- Enums, two-ways and `knobAcceleration: "wide"` all branch before the curve
+  and are unaffected.
+- An int knob curves, but a detent always moves it: at the compressed end a
+  step can round to nothing, and a knob that does not move is a broken knob,
+  so it takes one whole unit in the direction of travel instead.
+- A curve says nothing about which values are **legal** — that is
+  quantisation, a separate concept belonging to the module.
+
 ### A momentary fires from the KNOB too, and it LATCHES per gesture
 
 A trigger is `access: "write"` on an ordinary enum — there is no `trigger` type

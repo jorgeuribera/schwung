@@ -820,6 +820,62 @@ export const HEADER_GAP = 4;
 /** The title's floor: the old fixed 55%, so the worst case is what shipped. */
 export const HEADER_MIN_LEFT = Math.floor(W * 0.55);
 
+/**
+ * This renderer draws whatever string it is handed — it does not compute one
+ * (a sibling module owns that arithmetic and joins a value to a trailing
+ * musical token as `value + "  " + token`, two spaces and no separator glyph,
+ * a deliberate sentinel documented at its own source rather than incidental
+ * formatting). But it still has to fit the finished string into a pixel
+ * budget WITHOUT ever showing a partial token: plain char-slicing does not
+ * know the "  " boundary exists, so a tight header chopped
+ * "41.105 ms  1/32T" from the right down to "41.105 ms  1" — a
+ * complete-looking but meaningless fragment of the token.
+ *
+ * Returns candidates in priority order, each carrying either the COMPLETE
+ * trailing token or none of it, never a partial one:
+ *   1. value, in full, with the full token and its signed offset
+ *   2. value with its unit spelling dropped (still full token + offset)
+ *   3. value with unit dropped, the token WITHOUT the offset
+ *   4. value alone (unit restored) — the token dropped entirely
+ *
+ * A string with no "  " separator (the ordinary page-name/plain-value case)
+ * returns unchanged as its only candidate.
+ */
+export function atomicTokenTiers(text) {
+    const sep = text.indexOf("  ");
+    if (sep < 0) return [text];
+    const value = text.slice(0, sep);
+    const suffix = text.slice(sep + 2);
+    const offsetMatch = suffix.match(/^(.*?)(\s[+-]\d+)$/);
+    const label = offsetMatch ? offsetMatch[1] : suffix;
+    const compact = value.replace(/\s+(ms|sec)$/i, "");
+    const tiers = [text];
+    if (compact !== value) tiers.push(compact + "  " + suffix);
+    if (offsetMatch) tiers.push(compact + "  " + label);
+    tiers.push(value);
+    return tiers;
+}
+
+/**
+ * Pick the first atomicTokenTiers() candidate that fits `maxW`, capped
+ * exactly as drawHeader draws it. `measure` is anything shaped like
+ * FONT4_MEASURE (a `{ textWidth(s) }`). Falls back to char-slicing the last
+ * (token-free) tier if even that overflows, so this can still never crop a
+ * token.
+ */
+export function fitHeaderRight(measure, maxW, text) {
+    if (!text) return "";
+    const tiers = atomicTokenTiers(text);
+    for (const t of tiers) {
+        const capped = caps(t);
+        if (measure.textWidth(capped) <= maxW) return capped;
+    }
+    let s = caps(tiers[tiers.length - 1]);
+    if (measure.textWidth(s) <= maxW) return s;
+    while (s.length > 1 && measure.textWidth(s) > maxW) s = s.slice(0, -1);
+    return s;
+}
+
 export function drawHeader(ctx, left, right, inverted = false, padIcon = null) {
     /* font4x5, not the label face: the header is secondary text (the slot
      * title, the page name, and the touched parameter's full name and value),
@@ -865,6 +921,10 @@ export function drawHeader(ctx, left, right, inverted = false, padIcon = null) {
     }
     const color = inverted ? 0 : 1;
     const fit5 = (t, maxW) => caps(fitText(FONT4_MEASURE, caps(t), maxW));
+    /* fitHeaderRight never crops inside a trailing token — see its doc
+     * comment above. Ordinary strings (no "  " separator) pass through
+     * fit5-equivalent behavior unchanged. */
+    const fitRight = (maxW) => right ? fitHeaderRight(FONT4_MEASURE, maxW, right) : "";
 
     /*
      * The split between the two sides is MEASURED, not fixed.
@@ -904,11 +964,13 @@ export function drawHeader(ctx, left, right, inverted = false, padIcon = null) {
     const iconW = (padIcon !== null && padIcon !== undefined) ? PAD_ICON_W : 0;
 
     /* Both budgets are measured against the icon, never assumed around it, or
-     * a long page name draws its last glyph through the box. */
-    let r = right ? fit5(right, Math.floor(W * 0.6) - iconW) : "";
+     * a long page name draws its last glyph through the box. fitRight (not
+     * fit5) so a right side carrying a trailing token is never cropped
+     * mid-token even when the icon has also eaten into its budget. */
+    let r = right ? fitRight(Math.floor(W * 0.6) - iconW) : "";
     let rw = r ? fontWidth4x5(r) : 0;
     if (rw && W - 4 - iconW - rw - HEADER_GAP < HEADER_MIN_LEFT) {
-        r = fit5(right, Math.max(0, W - 4 - iconW - HEADER_MIN_LEFT - HEADER_GAP));
+        r = fitRight(Math.max(0, W - 4 - iconW - HEADER_MIN_LEFT - HEADER_GAP));
         rw = r ? fontWidth4x5(r) : 0;
     }
     const l = fit5(left, W - 4 - iconW - (rw ? rw + HEADER_GAP : 0));

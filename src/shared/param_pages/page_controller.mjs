@@ -42,6 +42,7 @@ import { renderPageMovy, drawFooter, drawHeader as drawHeaderMovy, drawBankBar,
          MENU_LIST_X, MENU_LIST_Y, MENU_LIST_W } from "./render_page_movy.mjs";
 import { resolveViz, vizDiveTarget, VIZ_SWITCH } from "./viz.mjs";
 import { widgetsGeneration } from "./widget_registry.mjs";
+import { withLandmark } from "./tempo_landmarks.mjs";
 import { createAnimState } from "./anim_state.mjs";
 import { drawMenuList } from "../menu_layout.mjs";
 import { drawEnumList } from "./enum_list.mjs";
@@ -569,6 +570,32 @@ export function createController(io = {}) {
      */
     const loadCard = io.loadCard || null;
     const now = io.now || (() => Date.now());
+    /*
+     * Optional: the current tempo, in BPM.
+     *
+     *   getTempo() -> number | null
+     *
+     * Injected for the same reason `isModulated` is: only the host knows it.
+     * `null` (or nothing injected at all) means "no tempo available", and
+     * every landmark quietly disappears rather than being guessed at.
+     *
+     * CACHED, because it is asked for during a DRAW. The host side already
+     * refreshes its own view of the tempo on its tick, so re-asking per cell
+     * would be a read per cell per frame for a number that changes a few
+     * times a minute — and a param read costs more than redrawing the whole
+     * screen. TEMPO_CACHE_MS puts a floor under it; a stopped transport still
+     * reports its last tempo, so landmarks stay meaningful while parked.
+     */
+    const TEMPO_CACHE_MS = 250;
+    const getTempo = io.getTempo || (() => null);
+    let tempoCache = { bpm: null, atMs: -Infinity };
+    function currentTempo() {
+        const t = now();
+        if (t - tempoCache.atMs < TEMPO_CACHE_MS) return tempoCache.bpm;
+        const raw = Number(getTempo());
+        tempoCache = { bpm: isFinite(raw) && raw > 0 ? raw : null, atMs: t };
+        return tempoCache.bpm;
+    }
     /* Graphics default on; a caller can pass `enableViz: false` to keep the
      * plain grid (a tool that wants every cell individually addressable), and
      * `vizOverrides` to correct a wrong detector guess without a module
@@ -2788,9 +2815,11 @@ export function createController(io = {}) {
         const raw = s.values[key] === undefined ? null : s.values[key];
         if (formatValue) {
             const resolved = formatValue(fullKey(key), raw, "header");
-            if (resolved !== null && resolved !== undefined) return String(resolved);
+            if (resolved !== null && resolved !== undefined) {
+                return withLandmark(String(resolved), raw, meta, currentTempo());
+            }
         }
-        return displayValue(raw, meta);
+        return withLandmark(displayValue(raw, meta), raw, meta, currentTempo());
     }
 
     function knobListEntries(p) {
@@ -4213,9 +4242,33 @@ export function createController(io = {}) {
                  * picture spanning four cells cannot say which of them is
                  * locked. */
                 decorations: s.decorations,
-                displayFor: formatValue
-                    ? (key, raw, surface) => formatValue(fullKey(key), raw, surface)
-                    : null,
+                /*
+                 * The one place the grid's held-knob header asks for its
+                 * text, so it is also the one place a tempo landmark is
+                 * appended there. The LIST gets it from knobRowValue; both
+                 * go through the same withLandmark helper, so the musical
+                 * arithmetic cannot diverge between the two surfaces.
+                 *
+                 * A CELL is deliberately excluded. Its 30px label band has
+                 * room for a value and nothing else, and a landmark that
+                 * permanently ate cell space would be furniture rather than
+                 * information — it only ever belongs to the surface that is
+                 * already showing the value under your hand. Returning null
+                 * for a cell when the host has no formatter keeps the old
+                 * fallback path exactly as it was.
+                 */
+                displayFor: (key, raw, surface) => {
+                    const meta = s.metaIndex ? s.metaIndex.getOrGuess(key) : null;
+                    const resolved = formatValue
+                        ? formatValue(fullKey(key), raw, surface) : null;
+                    if (surface !== "header") {
+                        return (resolved === null || resolved === undefined)
+                            ? null : String(resolved);
+                    }
+                    const text = (resolved === null || resolved === undefined)
+                        ? displayValue(raw, meta) : String(resolved);
+                    return withLandmark(text, raw, meta, currentTempo());
+                },
                 /* Every knob under a finger inverts its label, not just the one
                  * the header is following. */
                 touchedSlots: s.hintLines ? [] : s.touchOrder,

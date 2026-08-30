@@ -1181,6 +1181,111 @@ speed, different shape. Clamped to `[0.0001, 0.25]`. A value that is absent,
 `Number(null)` is `0`, and a knob that takes ten thousand detents to cross its
 range is not a safe reading of "unset".
 
+### A tempo LANDMARK is information, not a detent
+
+`tempo_landmarks: true` on a `chain_params` entry. The whole model lives in
+`src/shared/param_pages/tempo_landmarks.mjs`, and every surface asks it — the
+grid's held-knob header through `withLandmark`, the list through the same call
+in `knobRowValue`.
+
+**This is not tempo sync, and the distance between the two is the design.**
+
+| | tempo sync | a landmark |
+|---|---|---|
+| can the value sit between two notes? | no | **yes** |
+| does tempo move the value? | yes | **no** |
+| is there a detent at the note? | yes | **no** |
+| does the knob's motion change? | yes | **no** |
+
+The parameter stays completely free. Tempo only decides whether the screen has
+a rhythmic value worth printing beside it:
+
+```
+A Time   247 ms   1/8 -3
+A Time   250 ms   1/8
+A Time   257 ms   1/8 +7
+```
+
+Those three states are musically different — deliberately early, locked,
+deliberately late — and a snapped control makes two of them unreachable.
+
+**There is no magnetic detent, no sticky region and no soft lock.** Nothing in
+the landmark layer writes; it is a distance measurement rendered as text. A
+knob with the flag produces detent-for-detent identical motion to one without
+it, which `tests/host/test_tempo_landmarks.sh` pins directly against the knob
+engine rather than asserting in prose.
+
+Opt-in, because a `unit` of `ms` is not consent: most millisecond parameters
+are envelopes, smoothing times and fade times, and none of them are notes. The
+declared unit is honoured (`sec`/`s` are converted to ms) so a param is never
+read in the wrong scale.
+
+#### The set, and the alias rule
+
+All durations are fractions of a **whole note**, because that is the one
+representation where a triplet of a straight value is itself a clean fraction.
+
+- **Straight** `1/1 … 1/128`
+- **Triplet** `1/8T = 1/8 × 2/3` (shorter)
+- **Dotted** `1/8D = 1/8 × 3/2` (longer)
+- **Bars** `1, 2, 3, 4, 6, 8, 12, 16, 24, 32` (4/4 assumed — one bar IS one
+  whole note)
+
+Triplet and dotted are **never** collapsed into each other. But a rational
+spelling of a triplet IS the same landmark and must be drawn once:
+
+```
+1/3  == 1/2T      1/6  == 1/4T      1/12 == 1/8T      1/24 == 1/16T
+```
+
+The canonical set contains no two entries at the same millisecond, and the
+rational alias is kept on the landmark as presentation data rather than as a
+second marker. For the same reason `1/1` is canonicalised to `1 bar` — in 4/4
+they are one duration, and for something that long the phrase is what is being
+counted.
+
+Labels are **text, not glyphs**: an explicit `1/8T` is easier to reason about
+at a glance than a note symbol, and it fits the font the display has. Which
+alias gets shown is decided in `formatLandmark` and nowhere else, so the grid
+and the list cannot disagree.
+
+#### Relevance is proportional, not a flat tolerance
+
+A landmark only appears when the value is near one, and "near" is a share of
+**that landmark's own duration** (`LANDMARK_RELEVANCE`, 5%).
+
+A fixed ±10 ms would be musically wrong at both ends: two thirds of a `1/64`
+and a rounding error on a 16-bar phrase. Proportional keeps the zone meaning
+"about this note" everywhere — about 6 ms at `1/16`, about 100 ms at `1 bar`,
+under a millisecond at `1/128`.
+
+5% is also chosen so neighbouring zones never touch. The tightest pair in the
+set is `1/4T` against `1/8D` (a ratio of 1.125), so "nearest" is never a coin
+toss.
+
+**Null is the common answer and the correct one.** A landmark that is always
+on screen stops being information and becomes furniture. It is suppressed when
+the param does not opt in, when the value is not a number, when there is no
+usable tempo, and — most of the time — when the value simply is not near
+anything.
+
+#### Where the tempo comes from
+
+Injected as `io.getTempo()`, like `isModulated`: only the host knows it. The
+shadow UI backs it with the overlay state its tick already refreshes behind a
+sequence-number gate, so it is a field read on a cached object and adds **no
+param round trip** to the frame. The controller caches it again on its own
+cadence because it is asked for during a draw.
+
+`null` means "no tempo", and every landmark disappears rather than being
+guessed at. A **stopped** transport still reports the last tempo it knew,
+which is exactly right: 250 ms is still an eighth note whether or not anything
+is playing. Nothing here starts, stops or nudges the transport.
+
+A landmark is only ever appended to the **header** and the **list row**. A
+30px cell label band has room for a value and nothing else, and a landmark
+that permanently ate cell space would be furniture.
+
 ### A momentary fires from the KNOB too, and it LATCHES per gesture
 
 A trigger is `access: "write"` on an ordinary enum — there is no `trigger` type

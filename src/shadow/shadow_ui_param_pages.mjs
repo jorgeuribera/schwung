@@ -335,6 +335,22 @@ export function enterParamPages(slot, component, prefix, restorePageName, io, ch
                 if (typeof ctx.drawCanvasPageBody !== 'function') return;
                 ctx.drawCanvasPageBody(currentSlot, currentComponent, drawCtx, band, canvas, payload);
             },
+            /*
+             * Tempo, for the informational rhythmic landmarks a param can
+             * opt into (`tempo_landmarks: true`). It never touches the
+             * transport and never changes a value -- it only decides whether
+             * there is anything worth printing beside one.
+             *
+             * `ctx.getTempo` reads the overlay state the tick already
+             * refreshes behind a sequence gate, so this is a field read
+             * rather than a param round trip; the controller caches it again
+             * on its own cadence because it is asked for during a draw.
+             *
+             * Null when no tempo is known, and every landmark then quietly
+             * disappears instead of being guessed at.
+             */
+            getTempo: () => (typeof ctx.getTempo === 'function'
+                ? ctx.getTempo() : null),
         }, io || {}));
     }
     /* Entering the view is the only way the module behind it can have changed,

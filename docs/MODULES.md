@@ -2945,6 +2945,49 @@ by exact inverse, so 347 ms stays 347 ms until a detent arrives. Enums,
 two-ways, `knobAcceleration: "wide"` and `knob_step_mode: "declared"` all
 branch before this and are unaffected.
 
+### `tempo_landmarks` — say where the nearest rhythmic value is
+
+Optional on a `chain_params` entry. **Information only — it is not tempo
+sync.**
+
+```json
+{"key": "a_time", "name": "A Time", "type": "float",
+ "min": 0, "max": 4000, "step": 1, "unit": "ms", "tempo_landmarks": true}
+```
+
+Your parameter stays **completely free**. Tempo does not quantise it, pull it,
+snap it, block it or move it, and the knob's motion is unchanged. All this does
+is let the screen print the nearest rhythmic landmark beside the value, so the
+user can sit deliberately before it, on it, or after it:
+
+```
+247 ms   1/8 -3
+250 ms   1/8
+257 ms   1/8 +7
+```
+
+Those three are musically different states, and a snapped control makes two of
+them unreachable. There is no magnetic detent and no sticky region.
+
+Use it for a time parameter the user aims at musical durations — a delay time,
+a pre-delay, a gate length. **Do not use it** for an envelope, a smoothing
+time, a fade or a release: those are milliseconds too, and none of them are
+notes. That is precisely why this is opt-in rather than inferred from
+`unit: "ms"`.
+
+The declared unit is honoured, so a param in seconds is not read as
+milliseconds (`sec` and `s` are converted).
+
+The landmark set is straight notes `1/1 … 1/128`, their **triplets** (`1/8T`
+= `1/8 × 2/3`) and **dotted** values (`1/8D` = `1/8 × 3/2`) — which are
+different things and never collapse into each other — plus bar landmarks
+`1, 2, 3, 4, 6, 8, 12, 16, 24, 32` in 4/4. A landmark only appears when the
+value is within 5% of its own duration, so the zone stays meaningful on a
+`1/128` and on a 32-bar phrase alike, and it vanishes cleanly when the value is
+not near anything.
+
+If no tempo is available nothing is shown — it is never guessed at.
+
 ### `access` — which direction a param means something in
 
 Optional on a `chain_params` entry. Defaults to `readwrite`; declare it when

@@ -23293,6 +23293,25 @@ function drawHelpDetail() {
     _ctx.drawCanvasPageBody = (slot, component, drawCtx, band, canvas, payload) =>
         drawCanvasPageBody(slot, component, drawCtx, band, canvas, payload);
     _ctx.isMuteHeld = () => hostMuteHeld;
+    /*
+     * Current tempo, for the informational rhythmic landmarks a param can
+     * opt into. Read-only, and it never touches the transport.
+     *
+     * Backed by `overlayState`, which the tick already refresches behind a
+     * sequence-number gate -- so this is a field read on a cached object,
+     * not a param round trip. It is the cheapest possible source, and the
+     * only one that does not add a read to the frame.
+     *
+     * Null when there is no tempo or the number is unusable, and every
+     * landmark then quietly disappears instead of being guessed at. A
+     * STOPPED transport still reports the last tempo it knew, which is what
+     * we want: 250 ms is still an eighth note whether or not anything is
+     * playing.
+     */
+    _ctx.getTempo = () => {
+        const bpm = overlayState ? Number(overlayState.samplerBpm) : NaN;
+        return (isFinite(bpm) && bpm > 0) ? bpm : null;
+    };
 
     /* Overtake session state (for tools menu "Resume" indicator) */
     Object.defineProperty(_ctx, 'overtakeModuleLoaded', {

@@ -1275,6 +1275,12 @@ A `Buses` action row opens the slot's bus list; a bus's own menu opens its
   `knob_step_frac` buys a detent budget of `1/knob_step_frac` end to end; the
   curve decides where that budget is spent. Narrowing min/max instead is what
   a moving window did, and it is what stalled on hardware.
+- **A tempo LANDMARK is information, not a detent.** `tempo_landmarks: true`
+  prints the nearest rhythmic value beside a FREE time parameter; it never
+  quantises, pulls, snaps or blocks it, and knob motion is unchanged. Relevance
+  is 5% of the landmark's OWN duration, not a flat millisecond tolerance.
+  Injected as `io.getTempo()` and cached on a UI cadence; `null` hides every
+  landmark rather than guessing 120.
 ### Recording / capture
 
 Audio capture is shim-side: the Quantized Sampler (Shift+Sample) and Skipback

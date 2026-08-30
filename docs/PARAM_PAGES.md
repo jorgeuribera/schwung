@@ -100,6 +100,27 @@ exact-step and exact-endpoint behavior; the existing
 `tests/shadow/test_knob_engine.sh` suite (none of whose fixtures declare
 `knob_step_mode`) pins that the default path is untouched.
 
+**Display precision covers the fine step too, but only here.** Reported from
+hardware: a declared step of 0.3 (fine 0.03) displayed at one decimal, so
+0.03/0.06/.../0.27 all read as "0.0"/"0.1"/"0.2"/"0.3" on the OLED — the
+canonical values were always exactly right (`formatParamForSet` already keeps
+≥3 decimals on the wire), only the DISPLAY collapsed them. `effectivePrecisionForStep`
+(`param_format.mjs`) widens `precisionForStep` to also cover
+`fineStepFor(meta)` (`knob_engine.mjs`) — but **only** for declared-step mode.
+Extending it to the default range-normalised engine was measured and
+rejected: an ordinary fleet param (freeverb's `room_size`, declared step
+0.05) has an actual fine-adjust size of 0.0005, and showing that would push
+nearly the whole existing float fleet to 4 decimals for a distinction that
+engine was never designed to make individually visible — its fine-adjust is
+a "feel your way there" gesture, not a "read the exact number" one. Declared
+mode is the one place that DOES promise exact values, so the fix stays
+scoped to it; every other param renders byte-identical to before.
+`fineStepFor` deliberately duplicates knobStep's own one-line fine formula
+rather than being called by it or calling it, so the display layer needs no
+knowledge of knob state — `tests/host/test_fine_step_display_precision.sh`
+pins the two against each other so drift is a CI failure, not a silent
+mismatch.
+
 ### Every enum opens a LIST — except at TWO options, where the click FLIPS it
 
 A picker over two items is a menu whose entire content is the value already

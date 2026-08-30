@@ -17,6 +17,8 @@
  * `meta.display_format` (printf-style ".Nf" or ".N%") wins over unit logic.
  */
 
+import { fineStepFor, isDeclaredStepMode } from "./knob_engine.mjs";
+
 export function precisionForStep(step, fallback = 2) {
     const s = Math.abs(Number(step));
     if (!isFinite(s) || s <= 0) return fallback;
@@ -25,6 +27,37 @@ export function precisionForStep(step, fallback = 2) {
     if (s >= 0.01)  return 2;
     if (s >= 0.001) return 3;
     return 4;
+}
+
+/**
+ * `precisionForStep`, widened to also show shift-fine's own resolution —
+ * but ONLY for `knob_step_mode: "declared"`.
+ *
+ * Reported from hardware: declared step 0.3 (fine 0.03) displayed at 1
+ * decimal, so 0.03/0.06/.../0.27 all read as "0.0"/"0.1"/"0.2"/"0.3" —
+ * several physically distinct fine-adjust values rendering identically.
+ * Declared mode's whole premise is "what you turn is what you get", exactly
+ * as true, and the display owes it the same honesty.
+ *
+ * Deliberately NOT applied to the default range-normalised engine, even
+ * though every float knob there has the identical shape of gap: its fine
+ * step is a fraction of a fraction of the RANGE (0.05 declared, 0.005
+ * coarse, 0.0005 fine is an ordinary fleet shape — freeverb's `room_size`),
+ * so widening precision to match it would push nearly the entire existing
+ * fleet (~1685 float chain_params entries) to 4 decimals for a distinction
+ * nothing there was ever meant to show individually — range-normalised
+ * fine-adjust is a "feel your way to a value" gesture, not a "read the
+ * exact number" one, and this codebase's own generic-unit / dB / ms / sec
+ * branches were never asked to resolve it. Declared mode is the one place
+ * that DOES make that promise, because exact declared values are the entire
+ * feature — so this is scoped to it, not generalised.
+ */
+export function effectivePrecisionForStep(meta, fallback = 2) {
+    const coarse = precisionForStep(meta && meta.step, fallback);
+    if (!isDeclaredStepMode(meta)) return coarse;
+    const fine = fineStepFor(meta);
+    if (!(fine > 0)) return coarse;
+    return Math.max(coarse, precisionForStep(fine, fallback));
 }
 
 /**
@@ -68,7 +101,7 @@ function fmtSemitones(num) {
 }
 
 function fmtHz(num, meta) {
-    const decimals = precisionForStep(meta && meta.step, 0);
+    const decimals = effectivePrecisionForStep(meta, 0);
     if (Math.abs(num) >= 1000) {
         return (num / 1000).toFixed(2) + " kHz";
     }
@@ -104,17 +137,17 @@ export function formatParamValue(rawValue, meta) {
     }
 
     const unit = meta.unit;
-    if (unit === "dB")  return num.toFixed(precisionForStep(meta.step, 1)) + " dB";
+    if (unit === "dB")  return num.toFixed(effectivePrecisionForStep(meta, 1)) + " dB";
     if (unit === "Hz")  return fmtHz(num, meta);
-    if (unit === "ms")  return num.toFixed(precisionForStep(meta.step, 1)) + " ms";
-    if (unit === "sec") return num.toFixed(precisionForStep(meta.step, 3)) + " sec";
+    if (unit === "ms")  return num.toFixed(effectivePrecisionForStep(meta, 1)) + " ms";
+    if (unit === "sec") return num.toFixed(effectivePrecisionForStep(meta, 3)) + " sec";
     if (unit === "%")   return fmtPercent(num, meta);
     if (unit === "st")  return fmtSemitones(num);
     if (unit === "BPM") return Math.round(num) + " BPM";
 
     if (meta.type === "int") return String(Math.round(num)) + (unit ? " " + unit : "");
 
-    const decimals = precisionForStep(meta.step);
+    const decimals = effectivePrecisionForStep(meta);
     return num.toFixed(decimals) + (unit ? " " + unit : "");
 }
 

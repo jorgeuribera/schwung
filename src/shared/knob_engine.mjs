@@ -91,6 +91,37 @@ export const KNOB_STEP_MODE_DECLARED = "declared";
 export function isDeclaredStepMode(meta) {
     return !!meta && meta.knob_step_mode === KNOB_STEP_MODE_DECLARED;
 }
+
+/**
+ * DISPLAY-ONLY query: the per-detent size a SHIFT-held gesture actually
+ * produces for this meta. Deliberately does not call, and is not called by,
+ * knobStep -- this file's own promise is "fix the display, never the knob
+ * math," so the real fine arithmetic stays exactly where it already is
+ * (declaredLatticeStep's fine branch, and knobStep's default-path fine
+ * branch) and this is a second, read-only statement of the same rule for a
+ * caller that only wants the NUMBER, not a value that moves anything.
+ *
+ * A duplicated one-line formula, on purpose, in preference to importing
+ * knob_engine into the display layer's hot path or exporting knobStep's
+ * internals: `tests/host/test_fine_step_display_precision.sh` pins this
+ * against a live knobStep call for a matrix of metas, so drift between the
+ * two is a CI failure the moment either changes, not a silent mismatch.
+ *
+ * Returns null where "fine" has no distinct numeric size to show: an enum or
+ * two-way steps in whole OPTIONS, not a decimal value, and
+ * `knobAcceleration: "wide"` has no fine multiplier of its own today (see
+ * wideStepCount -- it never reads `fine` at all).
+ */
+export function fineStepFor(meta) {
+    if (!meta || (meta.type !== "float" && meta.type !== "int")) return null;
+    if (!(meta.max > meta.min)) return null;
+    if (meta.knobAcceleration === "wide") return null;
+    const isInt = meta.type === "int";
+    const coarse = isDeclaredStepMode(meta)
+        ? (meta.step > 0 ? meta.step : (isInt ? 1 : 0.01))
+        : perDetentStep(meta);
+    return isInt ? Math.max(1, Math.round(coarse * 0.1)) : coarse * 0.1;
+}
 /**
  * An int range this narrow or narrower is stepped like an enum.
  *

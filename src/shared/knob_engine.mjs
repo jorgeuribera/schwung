@@ -62,6 +62,35 @@ export const ENUM_DELTA_DIV = 4;
 export const ARC_DELTA_SCALE = 0.5;
 /** A float/int knob's per-detent step, as a fraction of its own range. */
 export const MIN_STEP_RANGE_FRAC = 0.01;
+
+/**
+ * Opt-in value for `meta.knob_step_mode`: an ordinary detent moves the
+ * module's own DECLARED `step`, not a fraction of the range.
+ *
+ * Range-normalised stepping (the default above) is right for a knob whose
+ * whole point is a fast, roughly-even sweep across whatever range the module
+ * picked. It is wrong for a module that declares a step because the step
+ * itself is the unit the value is meant to be read and set in — a delay time
+ * in exact tenths of a millisecond, say, where "0.1" is a meaningful value and
+ * "23.7194" (an arbitrary 1%-of-range fraction) is not one the module or its
+ * author ever intended a user to land on. Declaring `knob_step_mode:
+ * "declared"` opts a param OUT of range-normalisation and into moving exactly
+ * by its own step, one detent at a time, with no acceleration curve and no
+ * narrow-range gating layered on: the whole feature is "what you turn is what
+ * you get."
+ *
+ * Absent (or any other value) leaves every existing param exactly as it
+ * behaved before this mode existed — see MIN_STEP_RANGE_FRAC above, untouched
+ * by this file. Nothing in the fleet is expected to declare this on day one;
+ * it exists for a module whose parameter is precision- rather than sweep-
+ * shaped and says so.
+ */
+export const KNOB_STEP_MODE_DECLARED = "declared";
+
+/** True when a param opted into declared-step mode. See KNOB_STEP_MODE_DECLARED. */
+export function isDeclaredStepMode(meta) {
+    return !!meta && meta.knob_step_mode === KNOB_STEP_MODE_DECLARED;
+}
 /**
  * An int range this narrow or narrower is stepped like an enum.
  *
@@ -252,6 +281,64 @@ export function knobInit(initialValue) {
 }
 
 /**
+ * Declared-step stepping: an ordinary detent moves exactly one module-declared
+ * `step`, and min/max are always EXACTLY reachable — never a float neighbour
+ * of them a detent can approach but never land on.
+ *
+ * Iterating `value += step` and clamping afterwards (which is what the
+ * default range-normalised path below does, and is fine there) does not give
+ * that guarantee: repeated float addition drifts, and when the range is not
+ * an exact multiple of the step (min=0, max=1, step=0.3: 0, .3, .6, .9, and
+ * then a fourth detent would overshoot to 1.2) a plain clamp either overshoots
+ * past a meaningful ceiling or, after enough drift, can sit a few ULPs under
+ * `max` forever without ever comparing equal to it.
+ *
+ * So this steps an INTEGER lattice index (`round((value-min)/step)`) rather
+ * than the float value itself, and treats `max` as one extra, virtual grid
+ * point past the last clean multiple of `step` when the two do not coincide.
+ * Landing on that point always reads back as the exact `max` the module
+ * declared, and turning back from it drops to the last clean step below it —
+ * one detent, immediately, never a partial or a skipped step. `min` never
+ * needs the same treatment: index 0 times any step is exactly 0, so `min + 0`
+ * is `min` with no floating-point error possible.
+ */
+function declaredLatticeStep(state, meta, delta, fine) {
+    const min = meta.min, max = meta.max;
+    const isInt = meta.type === "int";
+    const declared = meta.step > 0 ? meta.step : (isInt ? 1 : 0.01);
+    /* Same FINE rule as the range-normalised path: a tenth of the coarse
+     * step, floored at one whole unit for an int so shift can still move it. */
+    const stepSize = !fine ? declared
+        : (isInt ? Math.max(1, Math.round(declared * 0.1)) : declared * 0.1);
+
+    const range = max - min;
+    const EPS = Math.max(1e-9, Math.abs(stepSize) * 1e-6);
+    /* How many clean steps fit under max without going over it. */
+    const maxIndex = Math.max(0, Math.floor((range + EPS) / stepSize));
+    const latticeMax = min + maxIndex * stepSize;
+    /* max sits past the last clean multiple -- it needs its own virtual index. */
+    const hasCeiling = latticeMax < max - EPS;
+    const topIndex = maxIndex + (hasCeiling ? 1 : 0);
+
+    /* Recover where the lattice we are already at, from the value alone --
+     * this function keeps no index of its own between calls, so a value
+     * sitting exactly on the virtual ceiling must be recognised as such
+     * rather than rounded back onto the ordinary grid one step short of it. */
+    let index = (hasCeiling && Math.abs(state.value - max) <= EPS)
+        ? topIndex
+        : Math.max(0, Math.min(maxIndex, Math.round((state.value - min) / stepSize)));
+
+    index = Math.max(0, Math.min(topIndex, index + delta));
+
+    let next = (hasCeiling && index === topIndex) ? max : min + index * stepSize;
+    if (Math.abs(next - min) <= EPS) next = min;
+    if (Math.abs(next - max) <= EPS) next = max;
+    if (isInt) next = Math.round(next);
+    state.value = next;
+    return next;
+}
+
+/**
  * @param {object} state   from movyKnobInit, mutated in place
  * @param {object} meta    param_meta.mjs metadata (min/max/step/type/options)
  * @param {number} delta   ±1 per physical detent (this library always decodes
@@ -435,6 +522,17 @@ export function knobStep(state, meta, delta, nowMs, fine = false) {
         if (meta.type === "int") next = Math.round(next);
         state.value = next;
         return next;
+    }
+
+    /*
+     * DECLARED STEP MODE, entirely separate from the range-normalised path
+     * below it. See KNOB_STEP_MODE_DECLARED and declaredLatticeStep -- this
+     * branch never touches MIN_STEP_RANGE_FRAC, perDetentStep or
+     * detentsPerStep, so opting a param in cannot change how any other
+     * param's default knob feel is computed.
+     */
+    if (isDeclaredStepMode(meta) && meta.max > meta.min) {
+        return declaredLatticeStep(state, meta, delta, fine);
     }
 
     const div = fine ? 1 : detentsPerStep(meta);

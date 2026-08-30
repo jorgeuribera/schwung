@@ -1262,7 +1262,9 @@ A `Buses` action row opens the slot's bus list; a bus's own menu opens its
   four slot stems stop summing to the master the moment a send carries signal.
   **Design credit: PR #121 (legsmechanical)**, re-implemented on current `main`
   because that branch's merge-base is 2026-03-04.
-
+- **`knob_step_mode: "declared"` opts a param out of range-normalised stepping**
+  and into moving by exactly its own `step`, with min/max always exactly
+  reachable. Additive and per-param — every existing module is unaffected.
 ### Recording / capture
 
 Audio capture is shim-side: the Quantized Sampler (Shift+Sample) and Skipback

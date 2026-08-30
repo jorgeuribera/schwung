@@ -1887,8 +1887,8 @@ name is already carrying the context, so the option only has to disambiguate.
 
 | Type | Fields | Description |
 |------|--------|-------------|
-| `int` | `min`, `max` | Integer value with knob control |
-| `float` | `min`, `max`, `step` | Float value (0.0-1.0 typical) |
+| `int` | `min`, `max`, `knob_step_mode` | Integer value with knob control |
+| `float` | `min`, `max`, `step`, `knob_step_mode` | Float value (0.0-1.0 typical) |
 | `enum` | `options` | List of string options |
 | `filepath` | `root`, `start_path`, `filter` | Opens Shadow UI file browser and stores selected path |
 | `module_picker` | `allow_none`, `allow_self`, `allowed_targets`, `param_key` | Dynamic enum from loaded chain components |
@@ -1907,6 +1907,17 @@ name is already carrying the context, so the option only has to disambiguate.
 
 Rate options are emitted from slowest to fastest timing, for example:
 `16 bars, ... 2 bars, 1 bar, 1/1T, 1/2, 1/2T, 1/4, ...`
+
+`knob_step_mode: "declared"` (optional, `int`/`float` only) opts a param OUT of
+the default range-normalised knob feel and INTO moving by exactly its own
+declared `step` per detent, with `min`/`max` always exactly reachable. Use it
+for a value meant to be read and set in its own declared unit — a precision
+timing or offset parameter where "step: 0.1" means the value should land on
+clean tenths — rather than an arbitrary fraction of whatever range the module
+picked. Leave it unset for an ordinary sweep control; that is the default and
+unchanged behavior for every existing module. See
+`src/shared/knob_engine.mjs` (`KNOB_STEP_MODE_DECLARED`) and
+`docs/PARAM_PAGES.md`.
 
 `wav_position` and `canvas` behavior details are documented in dedicated subsections below:
 - `wav_position` in module.json

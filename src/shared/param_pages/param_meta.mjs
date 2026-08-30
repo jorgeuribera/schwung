@@ -235,6 +235,35 @@ export function buildMetaIndex({ hierarchy, chainParams } = {}) {
 }
 
 /**
+ * Does ANY param in this contract declare a knob CONTROL LAW?
+ *
+ * `knob_step_frac` / `knob_curve` / `knob_curve_gamma` are metadata ABOUT
+ * HOW A KNOB MOVES, and a module is free to derive them from a different
+ * param — an Edit Speed or a Time Curve enum. That makes them the one class
+ * of metadata an ordinary enum turn can republish, which is what
+ * armContractSettle is for.
+ *
+ * This is NOT the moving-window refresh that stalled on hardware, and the
+ * difference is the whole point. That one re-read the contract WHILE THE
+ * TIME KNOB WAS MOVING, continuously, per gesture, because the metadata
+ * depended on that knob's own current value — so the window had to be
+ * re-anchored under the hand and every re-anchor was a chance to clamp or
+ * to jump. This re-reads because a DIFFERENT, discrete control was turned,
+ * once, after the hand stops. The value itself never enters metadata, so
+ * there is nothing to re-anchor and nothing that can move a value.
+ */
+export function declaresKnobLaw(metaIndex) {
+    const keys = metaIndex && metaIndex.keys;
+    if (!Array.isArray(keys) || typeof metaIndex.get !== "function") return false;
+    for (const k of keys) {
+        const m = metaIndex.get(k);
+        if (!m) continue;
+        if (m.knob_step_frac !== undefined || m.knob_curve !== undefined) return true;
+    }
+    return false;
+}
+
+/**
  * Fill in the fields a renderer needs, without inventing structure.
  * Never widens a declared range and never fabricates options.
  */

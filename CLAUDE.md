@@ -928,6 +928,10 @@ A `Buses` action row opens the slot's bus list; a bus's own menu opens its
   is 5% of the landmark's OWN duration, not a flat millisecond tolerance.
   Injected as `io.getTempo()` and cached on a UI cadence; `null` hides every
   landmark rather than guessing 120.
+- **An enum that republishes a knob law re-arms the contract settle**, gated on
+  `declaresKnobLaw()` so a contract with no `knob_curve`/`knob_step_frac` pays
+  nothing. Discrete and O(1) per gesture after the hand stops — not a refresh
+  while the time knob is moving, which is the thing that failed.
 ### Recording / capture
 
 Audio capture is shim-side: the Quantized Sampler (Shift+Sample) and Skipback

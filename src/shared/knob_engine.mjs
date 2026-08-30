@@ -157,13 +157,62 @@ export function detentsPerStep(meta) {
     return (range >= 2 && range <= NARROW_RANGE_MAX) ? ENUM_DELTA_DIV : 1;
 }
 
+/*
+ * EDIT SPEED — how much of the range one coarse detent covers.
+ *
+ * A SEPARATE QUESTION FROM A CURVE, and deliberately not conflated with one:
+ *
+ *     knob_step_frac   HOW FAST the knob traverses the range
+ *                      (what fraction of min..max one detent moves)
+ *     knob_curve       WHERE IN the range that travel is concentrated
+ *
+ * Micro / Normal / Long on a delay time are speeds, not sub-ranges: the
+ * sensitivity changes and the range does not. Declaring a narrower min/max
+ * instead is what a moving window did, and it is the thing that stalled on
+ * hardware — a window has to be refreshed under the hand, and it clamps or
+ * jumps when it is not. A speed cannot do either, because the range it walks
+ * is the one that was declared, always.
+ *
+ * Absent, it is exactly MIN_STEP_RANGE_FRAC * ARC_DELTA_SCALE — the shipped
+ * ~200 detents end to end, unchanged.
+ */
+export const KNOB_STEP_FRAC_MIN = 0.0001;   /* 10000 detents end to end */
+export const KNOB_STEP_FRAC_MAX = 0.25;     /* 4 detents end to end */
+
+/**
+ * The fraction of the range one coarse detent moves, for this knob.
+ *
+ * Clamped, so hostile metadata degrades to a legal speed rather than to a
+ * knob that cannot move or one that crosses its whole range in one click.
+ */
+export function knobStepFrac(meta) {
+    const raw = meta ? meta.knob_step_frac : undefined;
+    /*
+     * "Not set" and "set to nothing" are the same thing, and neither is a
+     * request for the slowest speed on the dial: Number(null) is 0, and a 0
+     * clamped up is KNOB_STEP_FRAC_MIN, a knob that takes ten thousand
+     * detents to cross its range.
+     */
+    if (raw === null || raw === undefined || raw === "") return MIN_STEP_RANGE_FRAC * ARC_DELTA_SCALE;
+    const f = typeof raw === "number" ? raw : Number(raw);
+    if (!isFinite(f)) return MIN_STEP_RANGE_FRAC * ARC_DELTA_SCALE;
+    return Math.min(KNOB_STEP_FRAC_MAX, Math.max(KNOB_STEP_FRAC_MIN, f));
+}
+
 /** schwung-movy model/knob-step.ts perDetentStep, ported. */
 export function perDetentStep(meta) {
     const arcScale = ARC_DELTA_SCALE;
     if (!(meta.max > meta.min)) return (meta.step > 0 ? meta.step : 0.01) * arcScale;
-    const rangeStep = (meta.max - meta.min) * MIN_STEP_RANGE_FRAC;
-    if (meta.type === "int") return Math.round(Math.max(meta.step > 0 ? meta.step : 1, rangeStep) * arcScale);
-    return rangeStep * arcScale;   // float
+    /*
+     * knobStepFrac is the fraction of the range a detent covers AFTER arc
+     * scaling, so divide it back out here and let both branches below scale
+     * it exactly as they did. The DEFAULT therefore lands on the old
+     * expression: range * 0.005 / 0.5 == range * MIN_STEP_RANGE_FRAC. An
+     * int's step floor and its rounding are untouched.
+     */
+    const preScale = (meta.max - meta.min) * (knobStepFrac(meta) / arcScale);
+    if (meta.type === "int") return Math.round(Math.max(meta.step > 0 ? meta.step : 1, preScale) * arcScale);
+    return preScale * arcScale;   // float
 }
 
 /**
@@ -396,6 +445,11 @@ export function curveUFromY(y, mode, gamma) {
  * Mirrors the shape of the range-normalised path it replaces — same detent
  * gate, same fine multiplier, same clamp, same int rounding — so the only
  * thing that differs is that the step is taken in u and warped back.
+ *
+ * `du` is the SAME knobStepFrac the flat path uses, so speed and curve
+ * compose instead of competing: du decides how fast u is walked end to end,
+ * gamma decides where along the way the value moves most. Changing one
+ * leaves the other's feel intact.
  */
 function curvedKnobStep(state, meta, steps, fine) {
     const mode = knobCurveMode(meta);
@@ -403,7 +457,7 @@ function curvedKnobStep(state, meta, steps, fine) {
     const min = meta.min;
     const max = meta.max;
     const span = max - min;
-    const base = MIN_STEP_RANGE_FRAC * ARC_DELTA_SCALE;
+    const base = knobStepFrac(meta);
     const du = fine ? base * 0.1 : base;
 
     const y0 = clamp01((state.value - min) / span);

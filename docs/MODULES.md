@@ -2898,6 +2898,53 @@ A curve decides how travel is **distributed**; it says nothing about which
 output values are legal. Quantisation is a separate concern and belongs to your
 module.
 
+### `knob_step_frac` — how fast a knob crosses the range it declares
+
+Optional on a `chain_params` entry, and **a different question from a curve**:
+
+| key | value | meaning |
+|---|---|---|
+| `knob_step_frac` | number > 0 | fraction of `min..max` one coarse detent covers |
+
+```json
+{"key": "a_time", "name": "A Time", "type": "float",
+ "min": 0, "max": 4000, "step": 1, "unit": "ms",
+ "knob_step_frac": 0.002}
+```
+
+Omit it and you get `0.005` — the shipped ~200 detents end to end, byte for
+byte what every knob does today. It is clamped to `[0.0001, 0.25]`, so hostile
+metadata degrades to a legal speed rather than to a knob that cannot move or
+one that crosses its whole range in one click.
+
+Reach for this when a control wants a **sensitivity** switch — the Micro /
+Normal / Long of a delay time. Do **not** reach for a narrower `min`/`max`: a
+sub-range has to slide under the hand to stay useful, and sliding is what
+stalled on hardware. A speed walks the range that was declared, always, so it
+can neither clamp nor jump.
+
+**Speed and curve are orthogonal, and that is the point.**
+
+- `knob_step_frac` buys a **detent budget**: `1/knob_step_frac` detents end to
+  end, whatever the curve is.
+- `knob_curve` decides **where that budget is spent**.
+
+So *low_focus γ2 + Micro* and *low_focus γ2 + Long* are the same curve shape at
+different speeds, and the fraction of the journey spent in the bottom tenth of
+the range is a property of the curve alone. Measured on `0..4000`, detents
+end to end:
+
+| | linear | low γ1.6 | low γ2.0 | low γ2.4 |
+|---|---|---|---|---|
+| Micro (`0.002`) | 500 | 501 | 500 | 500 |
+| Normal (`0.005`) | 200 | 201 | 200 | 200 |
+| Long (`0.0125`) | 80 | 81 | 81 | 81 |
+
+Changing speed under the hand does not move the value: `u` is still recovered
+by exact inverse, so 347 ms stays 347 ms until a detent arrives. Enums,
+two-ways, `knobAcceleration: "wide"` and `knob_step_mode: "declared"` all
+branch before this and are unaffected.
+
 ### `access` — which direction a param means something in
 
 Optional on a `chain_params` entry. Defaults to `readwrite`; declare it when

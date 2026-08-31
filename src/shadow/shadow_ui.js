@@ -570,6 +570,16 @@ const VIEWS = {
     SCENES: "scenes"                         // Scene crossfader: A, B, fader, arm
 };
 
+const FINE_LOCK_SCOPE_VIEWS = new Set([
+    VIEWS.PARAM_PAGES,
+    VIEWS.HIERARCHY_EDITOR,
+    VIEWS.CANVAS,
+]);
+
+function isFineLockScopeView(candidate = view) {
+    return FINE_LOCK_SCOPE_VIEWS.has(candidate);
+}
+
 /* ==== CO-RUN VIEW ADDRESSING ====
  * A curated registry of addressable Schwung screens a co-running tool may open as
  * a temporary OVERLAY over its co-run target, then return from — generalizing
@@ -1220,6 +1230,7 @@ function setView(newView, customLabel) {
         componentLoadHold = null;
     }
     view = newView;
+    syncFineLockScope();
     needsRedraw = true;
 
     /* Note: View announcements now happen in enter*() functions with full context */
@@ -1292,20 +1303,41 @@ let hostMuteHeld = false;   /* Mute (CC 88) held — used as a modifier for Mute
 let hostDeleteHeld = false; /* Delete/"X" (CC 119) held — modifier for Delete+JogClick device removal */
 
 /*
- * Shift Lock: double-tap Shift toggles a latch that OR's into every existing
- * Shift-layer read, so no command re-implements "shift or locked" itself.
- * isShiftHeld() (the SHM-backed read the vast majority of call sites use) and
- * hostEffectiveShiftHeld() (the small overtake-mode-local-tracking group)
- * are the only two places that read shiftLocked — see their definitions.
- * Session-only: nothing here is persisted, so a reboot always starts unlocked.
+ * Fine Lock: double-tap physical Shift toggles a session-only latch for
+ * PARAMETER precision only. Physical Shift keeps its ordinary global meaning;
+ * Fine Lock is only consulted by call sites that deliberately want fine
+ * parameter editing semantics, and only while the current view is inside the
+ * parameter-editing domain (see FINE_LOCK_SCOPE_VIEWS).
  */
-let shiftLocked = false;
-/* hostEffectiveShiftHeld folds the lock into the overtake-mode-local Shift
- * tracker the same way isShiftHeld() folds it into the SHM-backed one — one
- * OR, not duplicated at each of that tracker's few read sites. */
-function hostEffectiveShiftHeld() { return hostShiftHeld || shiftLocked; }
+let fineLockActive = false;
+function hostPhysicalShiftHeld() { return hostShiftHeld; }
+function isPhysicalShiftHeld() {
+    if (typeof shadow_get_shift_held === "function") {
+        return shadow_get_shift_held() !== 0;
+    }
+    return false;
+}
+function isFineLockActive() {
+    return fineLockActive && isFineLockScopeView();
+}
+function isFineModifierActive() {
+    return isPhysicalShiftHeld() || isFineLockActive();
+}
+function syncFineLockScope() {
+    if (fineLockActive && !isFineLockScopeView()) fineLockActive = false;
+}
 let lastShiftPressAtMs = 0;
 const SHIFT_DOUBLE_TAP_MS = 320;
+const FINE_LOCK_STATUS_TICKS = 45;
+let fineLockStatusTicks = 0;
+let fineLockStatusMessage = "";
+
+function showFineLockStatus(locked) {
+    fineLockStatusTicks = FINE_LOCK_STATUS_TICKS;
+    fineLockStatusMessage = locked ? "ON" : "OFF";
+    announce(locked ? "Fine lock on" : "Fine lock off");
+    needsRedraw = true;
+}
 
 /* Deferred module init - clear LEDs and wait before calling init() */
 let overtakeInitPending = false;
@@ -6310,18 +6342,6 @@ let masterConfirmIndex = 0;
 let masterOverwriteFromKeyboard = false;
 let masterShowingNamePreview = false;
 let masterNamePreviewIndex = 0;
-
-/* Shift state - read from shim via shadow_get_shift_held(), OR'd with the
- * double-tap Shift Lock latch (see shiftLocked's own doc comment). Physical
- * Shift keeps working exactly as before; the lock just holds it "down" until
- * double-tapped again. */
-function isShiftHeld() {
-    if (shiftLocked) return true;
-    if (typeof shadow_get_shift_held === "function") {
-        return shadow_get_shift_held() !== 0;
-    }
-    return false;
-}
 
 /* Component edit state (for Shift+Click editing) */
 let editingComponentKey = "";    // a component key: "synth", "midiFx", or "fxN"
@@ -20146,7 +20166,7 @@ function adjustHierSelectedParam(delta) {
     /* Legacy single-marker zoom (no view_group): Shift+jog still adjusts zoom
      * one step per click. Multi-marker (view_group) views use the dedicated
      * zoom knob instead — Shift+jog there is plain fine-step value editing. */
-    if (meta && meta.ui_type === "wav_position" && meta.enable_zoom && !meta.view_group && isShiftHeld()) {
+    if (meta && meta.ui_type === "wav_position" && meta.enable_zoom && !meta.view_group && isFineModifierActive()) {
         const cur = getWavZoomLevel(hierEditorSlot, meta, fullKey);
         setWavZoomLevel(hierEditorSlot, meta, fullKey, cur + (delta > 0 ? 1 : -1));
         needsRedraw = true;
@@ -20159,7 +20179,7 @@ function adjustHierSelectedParam(delta) {
 
     const isInt = meta && meta.type === "int";
     let step = (meta && meta.step > 0) ? meta.step : (isInt ? 1 : 0.01);
-    if (meta && meta.ui_type === "wav_position" && isShiftHeld()) {
+    if (meta && meta.ui_type === "wav_position" && isFineModifierActive()) {
         const fineStep = Math.abs(step) * getWavPositionShiftMultiplier(meta);
         if (fineStep > 0) step = fineStep;
     }
@@ -20742,7 +20762,7 @@ function processPendingHierKnob() {
              * accel divides further so slow turns feel smooth, fast turns snap. */
             const cfg = { type: "float", min: 0, max: 8, step: 0.5 };
             const st = getWavZoomKnobState(groupKey, cur);
-            const newZoom = knobStep(st, cfg, delta, Date.now(), isShiftHeld());
+            const newZoom = knobStep(st, cfg, delta, Date.now(), isFineModifierActive());
             setWavZoomLevel(hierEditorSlot, anchor.meta, anchor.fullKey, newZoom);
             needsRedraw = true;
             const factor = Math.pow(2, newZoom);
@@ -20766,7 +20786,7 @@ function processPendingHierKnob() {
                 ? { ...m.meta, step: (m.meta.step > 0 ? m.meta.step : 1) / Math.pow(2, z) }
                 : m.meta;
             const st = getPhysKnobState(m.fullKey, num);
-            const newVal = knobStep(st, knobMeta, delta, Date.now(), isShiftHeld());
+            const newVal = knobStep(st, knobMeta, delta, Date.now(), isFineModifierActive());
             const formatted = formatParamForSet(newVal, m.meta);
             setSlotParam(slot, m.fullKey, formatted);
             if (hierEditorEditMode && hierEditorEditKey === m.fullKey) {
@@ -20903,7 +20923,7 @@ function processPendingHierKnob() {
         /* Run through knob_engine so the divisor curve applies — many ticks
          * required per option change, with the same staleness reset semantics. */
         const st = getPhysKnobState(ctx.fullKey, currentIndex);
-        const newIndex = knobStep(st, ctx.meta, delta, Date.now(), isShiftHeld());
+        const newIndex = knobStep(st, ctx.meta, delta, Date.now(), isFineModifierActive());
         if (newIndex === currentIndex) {
             /* No option crossed yet — only update the overlay so the user sees
              * something happening, but DON'T setSlotParam (no value change). */
@@ -20951,7 +20971,7 @@ function processPendingHierKnob() {
     let knobMeta = ctx.meta;
     if (ctx.meta && ctx.meta.ui_type === "wav_position") {
         let step = ctx.meta.step > 0 ? ctx.meta.step : 0.01;
-        if (isShiftHeld()) {
+        if (isFineModifierActive()) {
             const mult = getWavPositionShiftMultiplier(ctx.meta);
             if (Math.abs(step) * mult > 0) step = Math.abs(step) * mult;
         }
@@ -20975,7 +20995,7 @@ function processPendingHierKnob() {
      */
     const wavPos = !!(ctx.meta && ctx.meta.ui_type === "wav_position");
     const st = getPhysKnobState(ctx.fullKey, num);
-    const newVal = knobStep(st, knobMeta, delta, Date.now(), !wavPos && isShiftHeld());
+    const newVal = knobStep(st, knobMeta, delta, Date.now(), !wavPos && isFineModifierActive());
 
     /* Update local cache — no IPC read needed on next turn */
     knobValueCache[knobIndex] = newVal;
@@ -21565,7 +21585,7 @@ function drawWavPositionEditor(selectedKey, selectedMeta) {
     const fullKey = buildHierarchyParamKey(selectedKey);
     const preview = getWavPositionPreviewData(fullKey, selectedMeta);
     const ratio = Math.max(0, Math.min(1, Number(preview.ratio) || 0));
-    const shiftHeld = isShiftHeld();
+    const shiftHeld = isFineModifierActive();
     const enableZoom = !!(selectedMeta && selectedMeta.enable_zoom);
     const zoomLevel = enableZoom ? getWavZoomLevel(hierEditorSlot, selectedMeta, fullKey) : 0;
     /* Two regimes:
@@ -24139,13 +24159,13 @@ function chainReorderJog(target, delta) {
 }
 
 /*
- * `shift` defaults to the live modifier rather than being passed by every
+ * `shift` defaults to the PHYSICAL modifier rather than being passed by every
  * caller: there are two call sites (plain and co-run) and both want the same
  * answer, so a parameter they both had to remember to fill in would be a
  * parameter one of them eventually forgot. It is a parameter at all so the
  * gesture can be driven without a device.
  */
-function handleJog(delta, shift = isShiftHeld()) {
+function handleJog(delta, shift = isPhysicalShiftHeld()) {
     hideOverlay();
     switch (view) {
         case VIEWS.SLOTS:
@@ -26511,7 +26531,7 @@ function drawChainEdit() {
      * pair — three pairs only fit while every word is <= 4 characters, and
      * drawFooter drops what does not fit rather than squeezing it.
      *
-     * isShiftHeld() is a read of the control SHM, not an IPC round trip, so
+     * Physical Shift is a read of the control SHM, not an IPC round trip, so
      * this is a per-frame call that costs nothing measurable.
      */
     drawChainEditorBands(movy, {
@@ -26519,7 +26539,8 @@ function drawChainEdit() {
         headerRight,
         label,
         info: infoLine,
-        hints: isShiftHeld() ? shiftHintsFor(selectedComp) : CHAIN_HINTS_AT_REST,
+        hints: isPhysicalShiftHeld() ? shiftHintsFor(selectedComp)
+                                     : CHAIN_HINTS_AT_REST,
     });
 
     /*
@@ -27120,7 +27141,9 @@ function drawHelpDetail() {
     _ctx.scanForAudioFxModules = (...args) => scanForAudioFxModules(...args);
     _ctx.loadMasterFxChainConfig = (...args) => loadMasterFxChainConfig(...args);
     _ctx.ensureMasterFxConfigFresh = () => ensureMasterFxConfigFresh();
-    _ctx.isShiftHeld = () => isShiftHeld();
+    _ctx.isPhysicalShiftHeld = () => isPhysicalShiftHeld();
+    _ctx.isFineLockActive = () => isFineLockActive();
+    _ctx.isFineModifierActive = () => isFineModifierActive();
     _ctx.getMasterFxSlotModule = (...args) => getMasterFxSlotModule(...args);
     _ctx.getMasterFxParam = (...args) => getMasterFxParam(...args);
     _ctx.getModuleAbbrev = (...args) => getModuleAbbrev(...args);
@@ -29017,6 +29040,8 @@ globalThis.tick = function() {
         } catch (e) { /* an observability line must never break the tick */ }
     }
 
+    syncFineLockScope();
+    if (fineLockStatusTicks > 0) fineLockStatusTicks--;
     /* Background tick for JS-suspended overtake modules.
      * Each parked module's tick() keeps firing so it can emit MIDI or advance
      * internal state. Display and LED bindings are swapped for no-ops so the
@@ -30827,6 +30852,10 @@ globalThis.tick = function() {
         drawStepMenuOnTop();
     }
 
+    if (fineLockStatusTicks > 0) {
+        drawStatusOverlay("FINE LOCK", fineLockStatusMessage);
+    }
+
     } catch (e) {
         /* tick draw EXCEPTION — log once per distinct error, show a brief
          * error screen this frame, and fall back to the slots view so the
@@ -30850,6 +30879,7 @@ globalThis.tick = function() {
 };
 
 globalThis.onMidiMessageInternal = function(data) {
+    syncFineLockScope();
     const status = data[0];
     const d1 = data[1];
     const d2 = data[2];
@@ -30928,21 +30958,25 @@ globalThis.onMidiMessageInternal = function(data) {
      * Double-tap detection lives on this same rising edge, since it is the one
      * place a physical Shift press is guaranteed to be seen regardless of view
      * or mode. Momentary Shift is unaffected either way: hostShiftHeld (and the
-     * SHM-backed state isShiftHeld() reads) already goes true on THIS press,
-     * before this code asks whether it was a double-tap — so holding Shift
-     * always works immediately, and only a SECOND press within the window
-     * additionally toggles the lock. A slow second tap just starts a new
-     * measuring window rather than locking. */
+     * SHM-backed state isPhysicalShiftHeld() reads) already goes true on THIS
+     * press, before this code asks whether it was a double-tap — so holding
+     * Shift always works immediately. A second press inside the parameter-
+     * editing scope toggles Fine Lock; elsewhere it is just another physical
+     * Shift tap. A slow second tap just starts a new measuring window rather
+     * than locking. */
     if ((status & 0xF0) === 0xB0 && d1 === 49) {
-        const wasDown = hostShiftHeld;
+        const wasDown = hostPhysicalShiftHeld();
         hostShiftHeld = (d2 > 0);
-        if (hostShiftHeld && !wasDown) {
+        if (hostPhysicalShiftHeld() && !wasDown) {
             const now = Date.now();
             if (now - lastShiftPressAtMs <= SHIFT_DOUBLE_TAP_MS) {
-                shiftLocked = !shiftLocked;
-                lastShiftPressAtMs = 0; /* consumed -- a third quick press starts fresh, not a re-toggle */
-                announce(shiftLocked ? "Shift lock on" : "Shift lock off");
-                needsRedraw = true;
+                if (isFineLockScopeView()) {
+                    fineLockActive = !fineLockActive;
+                    lastShiftPressAtMs = 0; /* consumed -- a third quick press starts fresh, not a re-toggle */
+                    showFineLockStatus(fineLockActive);
+                } else {
+                    lastShiftPressAtMs = now;
+                }
             } else {
                 lastShiftPressAtMs = now;
             }
@@ -31114,7 +31148,7 @@ globalThis.onMidiMessageInternal = function(data) {
          * This runs BEFORE passing MIDI to the module, ensuring escape always works */
         if ((status & 0xF0) === 0xB0 && d1 === MoveMainButton && d2 > 0) {
             debugLog(`JOG CLICK: hostShift=${hostShiftHeld} volTouch=${hostVolumeKnobTouched}`);
-            if (hostEffectiveShiftHeld() && hostVolumeKnobTouched) {
+            if (hostPhysicalShiftHeld() && hostVolumeKnobTouched) {
                 debugLog("HOST: Shift+Vol+Jog detected, exiting overtake mode");
                 if (toolOvertakeActive) {
                     exitToolOvertake();
@@ -31130,7 +31164,7 @@ globalThis.onMidiMessageInternal = function(data) {
          * Shift+Back: full exit (unload module).
          * Skip while co-run is active: the chain editor claims Back. */
         if ((status & 0xF0) === 0xB0 && d1 === MoveBack && d2 > 0 && overtakeSuspendKeepsJs && !coRunUiActive()) {
-            if (hostEffectiveShiftHeld()) {
+            if (hostPhysicalShiftHeld()) {
                 debugLog("HOST: Shift+Back → full exit (suspend_keeps_js module)");
                 if (toolOvertakeActive) exitToolOvertake();
                 else exitOvertakeMode();
@@ -31181,11 +31215,11 @@ globalThis.onMidiMessageInternal = function(data) {
                  * Shift+Click in CHAIN_EDIT → handleShiftSelect (enter
                  * component edit). Plain Click → handleSelect. */
                 runCoRunChainEdit(function() {
-                    if (hostEffectiveShiftHeld() && view === VIEWS.CHAIN_EDIT && selectedChainComponent >= 0) {
+                    if (hostPhysicalShiftHeld() && view === VIEWS.CHAIN_EDIT && selectedChainComponent >= 0) {
                         handleShiftSelect();
-                    } else if (hostEffectiveShiftHeld() && view === VIEWS.MASTER_FX && masterFxSelectedIsModule()) {
+                    } else if (hostPhysicalShiftHeld() && view === VIEWS.MASTER_FX && masterFxSelectedIsModule()) {
                         enterMasterFxModuleSelect(masterFxPositionOf(selectedMasterFxComponent));
-                    } else if (hostEffectiveShiftHeld() && view === VIEWS.BUS_CHAIN && !selectingBusModule) {
+                    } else if (hostPhysicalShiftHeld() && view === VIEWS.BUS_CHAIN && !selectingBusModule) {
                         enterBusModuleSelect();
                     } else {
                         handleSelect();
@@ -31227,7 +31261,7 @@ globalThis.onMidiMessageInternal = function(data) {
             }
             /* Shift (CC 49): give it ONLY to the chain editor. hostShiftHeld
              * was already updated earlier (line ~15091) before this branch, so
-             * the editor's isShiftHeld()-based code paths see the right state.
+             * the editor's physical-Shift code paths see the right state.
              * Eating it here prevents the tool from reacting (e.g. its own
              * Shift+button shortcuts while you're navigating the editor). */
             if (d1 === 49 && coRunWants(CORUN_GRP_SHIFT)) {
@@ -31425,14 +31459,18 @@ globalThis.onMidiMessageInternal = function(data) {
                 return;
             }
             /* Shift+Click in chain edit enters component edit mode */
-            if (isShiftHeld() && view === VIEWS.CHAIN_EDIT && selectedChainComponent >= 0) {
+            if (isPhysicalShiftHeld() && view === VIEWS.CHAIN_EDIT && selectedChainComponent >= 0) {
                 handleShiftSelect();
-            } else if (isShiftHeld() && view === VIEWS.MASTER_FX && masterFxSelectedIsModule()) {
+            } else if (isPhysicalShiftHeld() && view === VIEWS.MASTER_FX && masterFxSelectedIsModule()) {
                 /* Shift+Click in Master FX view enters module selector for the slot */
                 enterMasterFxModuleSelect(masterFxPositionOf(selectedMasterFxComponent));
-            } else if (isShiftHeld() && view === VIEWS.BUS_CHAIN && !selectingBusModule) {
+            } else if (isPhysicalShiftHeld() && view === VIEWS.BUS_CHAIN && !selectingBusModule) {
                 /* ...and on a bus insert, for the same reason: plain Click now
-                 * edits the module, so Shift is what swaps it. */
+                 * edits the module, so Shift is what swaps it. Physical, not
+                 * effective: this is a navigation gesture (enters module
+                 * select), not a fine-adjust one, so Fine Lock must not be
+                 * able to trigger it -- matching the CHAIN_EDIT/MASTER_FX
+                 * siblings right above. */
                 enterBusModuleSelect();
             } else {
                 handleSelect();

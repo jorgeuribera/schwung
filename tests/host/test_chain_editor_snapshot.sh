@@ -278,7 +278,7 @@ const CHAIN_DRAW_DEPS = [
   "getSlotParamCached", "drawMovyHeader", "DIAGRAM_Y", "MOVY_RULE_Y", "draw_rect",
   "getSlotParam", "slotChainComponents", "drawChainDiagram", "getChainComponentModule",
   "getModuleAbbrev", "chainComponentParamKey", "DIAGRAM_BOX_H", "SCREEN_WIDTH",
-  "getComponentParamPrefix", "drawMovyFooter", "isShiftHeld", "shiftHintsFor", "CHAIN_HINTS_AT_REST", "ensureChainConfigFresh",
+  "getComponentParamPrefix", "drawMovyFooter", "isPhysicalShiftHeld", "shiftHintsFor", "CHAIN_HINTS_AT_REST", "ensureChainConfigFresh",
   "knobCardDrawState", "drawKnobCard",
   "slotChainTarget", "chainLfoTargetMap", "chainComponentBypassed",
   /* The shared bands (header / label / info / footer), 4a-3. Supplied REAL --
@@ -456,7 +456,7 @@ function renderMaster(c) {
     fxBusSummary: (i) => (c.busSummaries || {})[i] || "",
     fxBusReturn: (i) => ((c.busReturns || {})[i] || 0),
     ensureMasterFxConfigFresh: () => {},
-    isShiftHeld: () => !!c.shift,
+    isPhysicalShiftHeld: () => !!c.shift,
     chainLfoTargetMap: mLfoMap,
     chainComponentBypassed: mBypassed,
     masterShowingNamePreview: false, masterConfirmingOverwrite: false,

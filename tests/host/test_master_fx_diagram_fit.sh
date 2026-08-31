@@ -131,7 +131,7 @@ function render(cap, selected, opts = {}) {
        edit, and a snapshot taken here would be the fixed row this step removed. */
     get MASTER_FX_CHAIN_COMPONENTS() { return decls.masterFxChainComponents(); },
     ensureMasterFxConfigFresh: () => {},
-    isShiftHeld: () => !!opts.shift,
+    isPhysicalShiftHeld: () => !!opts.shift,
     MASTER_FX_OPTIONS: [],
     currentMasterPresetName: "",
     getMasterFxParam: (i, k) => { reads.push("master_fx:fx" + (i + 1) + ":" + k); return ""; },

@@ -322,7 +322,7 @@ const call = (maker, deps, names) => maker(...names.map((n) => deps[n]));
    no function signature and leaves every other assertion here green. */
 {
   const hj = src.indexOf("function handleJog(");
-  const sig = /function handleJog\(delta, shift = isShiftHeld\(\)\)/.test(src);
+  const sig = /function handleJog\(delta, shift = isPhysicalShiftHeld\(\)\)/.test(src);
   if (!sig) fail("handleJog does not take shift, defaulted to the live modifier");
   const caseAt = src.indexOf("case VIEWS.CHAIN_EDIT:", hj);
   const term = "\n            break;";
@@ -544,7 +544,7 @@ const shiftHintsFor = shiftMaker ? shiftMaker(REST_HINTS) : (() => []);
   /* shiftHintsFor is lifted too, and the CELL is a parameter now: Shift
      offers different things depending on what the focused position holds. */
   const shown = (shift, comp) => hintsFrom(src, "drawChainEdit", at,
-    ["isShiftHeld", "movy", "headerText", "headerRight", "label", "infoLine",
+    ["isPhysicalShiftHeld", "movy", "headerText", "headerRight", "label", "infoLine",
      "shiftHintsFor", "selectedComp", "CHAIN_HINTS_AT_REST"],
     [() => shift, {}, "", "", "", "", shiftHintsFor, comp, REST_HINTS]);
 
@@ -636,7 +636,7 @@ const shiftHintsFor = shiftMaker ? shiftMaker(REST_HINTS) : (() => []);
   const mfx = readFileSync("src/shadow/shadow_ui_master_fx.mjs", "utf8");
   const at = mfx.indexOf("export function drawMasterFx(");
   const shown = (shift, comp) => hintsFrom(mfx, "drawMasterFx", at,
-    ["isShiftHeld", "dctx", "currentMasterPresetName", "label", "infoLine",
+    ["isPhysicalShiftHeld", "dctx", "currentMasterPresetName", "label", "infoLine",
      "shiftHintsFor", "selectedComp", "CHAIN_HINTS_AT_REST", "fxBus", "fxBusHints"],
     [() => shift, {}, "", "", "", shiftHintsFor, comp, REST_HINTS,
      () => ({ short: "MFX", label: "Master FX", hasPresets: true }),

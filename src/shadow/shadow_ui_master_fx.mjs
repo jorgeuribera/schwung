@@ -125,7 +125,7 @@ export function drawMasterFx() {
             getModuleAbbrev, isTextEntryActive, drawTextEntry,
             drawHelpDetail, drawHelpList,
             MASTER_CHAIN_TARGET, chainLfoTargetMap, chainComponentBypassed,
-            ensureMasterFxConfigFresh, isShiftHeld,
+            ensureMasterFxConfigFresh, isPhysicalShiftHeld,
             knobCardDrawState, fxBus, sendBusLevelRead } = ctx;
 
     clear_screen();
@@ -359,8 +359,8 @@ export function drawMasterFx() {
         headerRight: fxBus().short,
         label,
         info: infoLine,
-        hints: fxBusHints(isShiftHeld() ? shiftHintsFor(selectedComp)
-                                        : CHAIN_HINTS_AT_REST),
+        hints: fxBusHints(isPhysicalShiftHeld() ? shiftHintsFor(selectedComp)
+                                                 : CHAIN_HINTS_AT_REST),
     });
 
     /*

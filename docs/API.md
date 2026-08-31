@@ -147,6 +147,29 @@ clearAllLEDs();             // Clear all LEDs
 
 LED values are cached to avoid redundant MIDI sends.
 
+Plain-Shadow button LED ownership is also available for temporary control of
+native Move button LEDs:
+
+- logical identity = cable-0 CC index for the button
+- native RGB sysex with the same index is treated as the same logical button
+- scope = illuminated buttons only, excluding knob rings `71-78`
+- while owned, native hardware writes for that button are suppressed after
+  native cache update, so release restores the latest native state
+- release cancels pending custom output for that button, replays cached native
+  CC plus targeted sysex for the same logical index, then resumes passthrough
+
+### LED Capture Diagnostic
+
+For later hardware validation, the shim exposes a read-only LED capture logger:
+
+- enable: create `/data/UserData/schwung/led_capture_on`
+- disable: remove `/data/UserData/schwung/led_capture_on`
+- output: `/data/UserData/schwung/led_capture.log`
+
+Each captured packet records timestamp/order, raw USB-MIDI bytes, cable,
+decoded status, decoded `d1`/`d2`, whether native cache was updated, whether
+plain-Shadow ownership suppressed hardware output, and sysex packet byte count.
+
 ## Host Functions (Module Management)
 
 ```javascript
@@ -263,6 +286,9 @@ shadow_set_overtake_mode(mode)
 shadow_set_skip_led_clear(v)
 shadow_set_overtake_suppress_sysex(v)          // overtake: strip Move's cable-0 LED sysex (see docs/CORUN.md)
 shadow_set_overtake_suppress_master_volume(v)  // overtake: take CC 79 + master-touch note 8 from Move (see docs/CORUN.md)
+shadow_button_led_acquire(cc)                  // plain Shadow: temporarily own one native button LED by CC index
+shadow_button_led_release(cc)                  // plain Shadow: restore latest native state for that button, then unown
+shadow_release_all_owned_button_leds()         // plain Shadow: fail-safe restore/unown sweep for all owned buttons
 shadow_request_patch(slot, name) / shadow_request_exit()
 shadow_send_midi_to_dsp(slot, msg)
 shadow_load_ui_module(path)

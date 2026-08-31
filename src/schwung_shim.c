@@ -3918,6 +3918,9 @@ static void init_shadow_shm(void)
         shadow_control->corun.flags = 0;      /* 0 = legacy keep-list model */
         shadow_control->corun.keep_mask = 0;  /* 0 = default split when a target is set without a manifest */
         shadow_control->corun.led_keep_mask = 0; /* 0 = LED ownership follows keep_mask */
+        memset((void *)shadow_control->button_led_owned_mask, 0, sizeof(shadow_control->button_led_owned_mask));
+        memset((void *)shadow_control->button_led_release_mask, 0, sizeof(shadow_control->button_led_release_mask));
+        shadow_control->release_all_owned_button_leds = 0;
         shadow_control->shadow_display_owner = DISPLAY_OWNER_SCHWUNG_UI; /* splash boots into shadow UI */
         /* Initialize TTS defaults */
         shadow_control->tts_enabled = 0;    /* Screen Reader off by default */
@@ -9728,12 +9731,23 @@ static void *led_capture_logger_thread(void *arg)
                 uint8_t ch = batch[i].status & 0x0F;
                 const char *type_str = (type == 0x90) ? "NoteOn"
                                      : (type == 0xB0) ? "CC" : "?";
+                int sysex_bytes = 0;
+                if (batch[i].flags & LED_CAPTURE_F_SYSEX_PACKET) {
+                    uint8_t cin_type = batch[i].raw0 & 0x0F;
+                    if (cin_type == 0x04) sysex_bytes = 3;
+                    else if (cin_type >= 0x05 && cin_type <= 0x07) sysex_bytes = cin_type - 0x04;
+                }
                 fprintf(log_fp,
-                        "t=%llu.%03llu seq=%u cbl=%u st=0x%02X ch=%u %s d1=%u d2=%u\n",
+                        "t=%llu.%03llu seq=%u raw=%02X %02X %02X %02X cbl=%u st=0x%02X ch=%u %s d1=%u d2=%u cache=%u owned_suppress=%u sysex_bytes=%d\n",
                         (unsigned long long)(batch[i].ts_us / 1000),
                         (unsigned long long)(batch[i].ts_us % 1000),
-                        batch[i].seq, batch[i].cable, batch[i].status,
-                        ch, type_str, batch[i].d1, batch[i].d2);
+                        batch[i].seq,
+                        batch[i].raw0, batch[i].raw1, batch[i].raw2, batch[i].raw3,
+                        batch[i].cable, batch[i].status,
+                        ch, type_str, batch[i].d1, batch[i].d2,
+                        (batch[i].flags & LED_CAPTURE_F_UPDATED_NATIVE_CACHE) ? 1 : 0,
+                        (batch[i].flags & LED_CAPTURE_F_SUPPRESSED_BY_OWNERSHIP) ? 1 : 0,
+                        sysex_bytes);
             }
             if (n < 128) break;
         }

@@ -99,11 +99,21 @@ int led_queue_flush_move_sysex_restore(int max_leds);
 typedef struct {
     uint32_t seq;       /* monotonic; 0 = unused */
     uint64_t ts_us;     /* CLOCK_MONOTONIC microseconds */
+    uint8_t raw0;       /* full USB-MIDI packet byte 0 (cable<<4 | CIN) */
+    uint8_t raw1;
+    uint8_t raw2;
+    uint8_t raw3;
     uint8_t cable;
     uint8_t status;     /* full status byte incl. channel */
     uint8_t d1;
     uint8_t d2;
+    uint8_t flags;      /* LED_CAPTURE_F_* */
+    uint8_t _pad[3];
 } led_capture_entry_t;
+
+#define LED_CAPTURE_F_UPDATED_NATIVE_CACHE      0x01
+#define LED_CAPTURE_F_SUPPRESSED_BY_OWNERSHIP   0x02
+#define LED_CAPTURE_F_SYSEX_PACKET              0x04
 
 void led_queue_set_capture_enabled(int on);
 int led_queue_capture_enabled(void);

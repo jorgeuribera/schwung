@@ -124,7 +124,16 @@ typedef struct {
      * only in Session mode. Both are plain volatile int reads. */
     uint8_t  ui_mode;    /* shadow_control->move_ui_mode: 1=session 2=note 3=sets */
     uint32_t pulses;     /* shadow_transport_pulses: 24 PPQN since 0xFA */
+    uint8_t  flags;      /* LED_CAPTURE_F_* */
+    uint8_t  raw0;       /* full USB-MIDI packet byte 0 (cable<<4 | CIN) */
+    uint8_t  raw1;
+    uint8_t  raw2;
+    uint8_t  raw3;
 } led_capture_entry_t;
+
+#define LED_CAPTURE_F_UPDATED_NATIVE_CACHE      0x01
+#define LED_CAPTURE_F_SUPPRESSED_BY_OWNERSHIP   0x02
+#define LED_CAPTURE_F_SYSEX_PACKET              0x04
 
 void led_queue_set_capture_enabled(int on);
 int led_queue_capture_enabled(void);

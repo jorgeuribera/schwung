@@ -64,17 +64,22 @@ static inline uint64_t led_capture_now_us(void) {
     return (uint64_t)ts.tv_sec * 1000000ULL + (uint64_t)(ts.tv_nsec / 1000);
 }
 
-static inline void led_capture_record(uint8_t cable, uint8_t status,
-                                      uint8_t d1, uint8_t d2) {
+static inline void led_capture_record(uint8_t raw0, uint8_t raw1,
+                                      uint8_t raw2, uint8_t raw3, uint8_t flags) {
     if (!led_capture_enabled) return;
     uint32_t seq = ++led_capture_head;
     uint32_t idx = (seq - 1) & (LED_CAPTURE_RING_SIZE - 1);
     led_capture_ring[idx].seq = seq;
     led_capture_ring[idx].ts_us = led_capture_now_us();
-    led_capture_ring[idx].cable = cable;
-    led_capture_ring[idx].status = status;
-    led_capture_ring[idx].d1 = d1;
-    led_capture_ring[idx].d2 = d2;
+    led_capture_ring[idx].raw0 = raw0;
+    led_capture_ring[idx].raw1 = raw1;
+    led_capture_ring[idx].raw2 = raw2;
+    led_capture_ring[idx].raw3 = raw3;
+    led_capture_ring[idx].cable = (raw0 >> 4) & 0x0F;
+    led_capture_ring[idx].status = raw1;
+    led_capture_ring[idx].d1 = raw2;
+    led_capture_ring[idx].d2 = raw3;
+    led_capture_ring[idx].flags = flags;
     led_capture_ring[idx].pulses = (uint32_t)shadow_transport_pulses;
     {
         shadow_control_t *c = host.shadow_control ? *host.shadow_control : 0;
@@ -163,6 +168,7 @@ static int move_led_restore_pending = 0;
 static int move_led_clear_pending = 0;
 static int move_led_pass_count = 0;  /* how many clear/restore passes remain */
 static int prev_overtake_mode = 0;
+static int prev_display_mode = 0;
 
 /* Defined alongside the Move sysex cache near the end of this file. */
 static void cancel_move_sysex_restore_and_thaw(void);
@@ -214,6 +220,7 @@ void led_queue_init(const led_queue_host_t *h) {
     move_led_clear_pending = 0;
     move_led_pass_count = 0;
     prev_overtake_mode = 0;
+    prev_display_mode = 0;
     for (int i = 0; i < 128; i++) {
         move_note_led_state[i] = -1;
         move_cc_led_state[i] = -1;
@@ -225,6 +232,38 @@ void led_queue_init(const led_queue_host_t *h) {
         jack_cc_led_state[i] = -1;
     }
     led_queue_module_initialized = 1;
+}
+
+static int plain_button_leds_owned(const shadow_control_t *ctrl) {
+    if (!ctrl) return 0;
+    for (int i = 0; i < SHADOW_BUTTON_LED_MASK_WORDS; i++) {
+        if (ctrl->button_led_owned_mask[i]) return 1;
+    }
+    return 0;
+}
+
+static int plain_button_led_owned(const shadow_control_t *ctrl, uint8_t cc) {
+    if (!ctrl || !shadow_button_led_is_cc_eligible((int)cc)) return 0;
+    return shadow_button_led_mask_test(ctrl->button_led_owned_mask, cc);
+}
+
+static int plain_button_led_release_requested(const shadow_control_t *ctrl, uint8_t cc) {
+    if (!ctrl || !shadow_button_led_is_cc_eligible((int)cc)) return 0;
+    return shadow_button_led_mask_test(ctrl->button_led_release_mask, cc);
+}
+
+static void clear_plain_button_led_pending(uint8_t cc) {
+    shadow_init_led_queue();
+    if (cc >= 128) return;
+    shadow_pending_cc_color[cc] = -1;
+}
+
+static void clear_plain_button_led_bits(shadow_control_t *ctrl, uint8_t cc) {
+    int word = shadow_button_led_mask_word(cc);
+    uint32_t bit = shadow_button_led_mask_bit(cc);
+    if (!ctrl || word < 0 || word >= SHADOW_BUTTON_LED_MASK_WORDS) return;
+    ctrl->button_led_owned_mask[word] &= ~bit;
+    ctrl->button_led_release_mask[word] &= ~bit;
 }
 
 /* ============================================================================
@@ -241,6 +280,7 @@ void shadow_init_led_queue(void) {
 }
 
 void shadow_queue_led(uint8_t cin, uint8_t status, uint8_t data1, uint8_t data2) {
+    shadow_init_led_queue();
     uint8_t type = status & 0xF0;
     if (type == 0x90) {
         /* Note-on: queue by note number (last-writer-wins) */
@@ -411,9 +451,113 @@ static void strip_move_note_leds(uint8_t *midi_out, int lo, int hi) {
     }
 }
 
+static void led_queue_restore_move_sysex_led_index(uint8_t idx);
+
+static void queue_plain_button_led_native_restore(uint8_t cc) {
+    shadow_init_led_queue();
+    clear_plain_button_led_pending(cc);
+    if (move_cc_led_state[cc] >= 0) {
+        shadow_pending_cc_color[cc] = move_cc_led_state[cc];
+        shadow_pending_cc_status[cc] = move_cc_led_status[cc];
+        shadow_pending_cc_cin[cc] = move_cc_led_cin[cc];
+    } else {
+        shadow_pending_cc_color[cc] = 0;
+        shadow_pending_cc_status[cc] = 0xB0;
+        shadow_pending_cc_cin[cc] = 0x0B;
+    }
+    led_queue_restore_move_sysex_led_index(cc);
+}
+
+static void release_plain_button_led(shadow_control_t *ctrl, uint8_t cc, int restore_native) {
+    if (!ctrl || !shadow_button_led_is_cc_eligible((int)cc)) return;
+    clear_plain_button_led_pending(cc);
+    if (restore_native) {
+        queue_plain_button_led_native_restore(cc);
+    }
+    clear_plain_button_led_bits(ctrl, cc);
+}
+
+static void release_all_plain_button_leds(shadow_control_t *ctrl, int restore_native) {
+    if (!ctrl) return;
+    for (int cc = 0; cc < 128; cc++) {
+        if (!plain_button_led_owned(ctrl, (uint8_t)cc)) continue;
+        release_plain_button_led(ctrl, (uint8_t)cc, restore_native);
+    }
+    ctrl->release_all_owned_button_leds = 0;
+}
+
+static void service_plain_button_led_release_requests(shadow_control_t *ctrl,
+                                                      int display_mode,
+                                                      int cur_overtake) {
+    if (!ctrl) return;
+
+    int should_restore_all = 0;
+    int should_drop_all = 0;
+
+    if (ctrl->release_all_owned_button_leds) {
+        should_restore_all = !cur_overtake || ctrl->skip_led_clear;
+        should_drop_all = !should_restore_all;
+    } else if (prev_display_mode && !display_mode) {
+        should_restore_all = 1;
+    } else if (ctrl->should_exit) {
+        should_restore_all = 1;
+    } else if (!prev_overtake_mode && cur_overtake) {
+        should_restore_all = ctrl->skip_led_clear ? 1 : 0;
+        should_drop_all = ctrl->skip_led_clear ? 0 : 1;
+    }
+
+    if (should_restore_all || should_drop_all) {
+        release_all_plain_button_leds(ctrl, should_restore_all);
+        return;
+    }
+
+    for (int cc = 0; cc < 128; cc++) {
+        if (!plain_button_led_release_requested(ctrl, (uint8_t)cc)) continue;
+        release_plain_button_led(ctrl, (uint8_t)cc,
+                                 !cur_overtake || ctrl->skip_led_clear);
+    }
+}
+
+static void suppress_owned_plain_button_led_cc_packets(const shadow_control_t *ctrl,
+                                                       uint8_t *midi_out) {
+    if (!ctrl || !midi_out || !plain_button_leds_owned(ctrl)) return;
+    for (int i = 0; i < HW_MIDI_OUT_SIZE; i += 4) {
+        uint8_t cable = (midi_out[i] >> 4) & 0x0F;
+        uint8_t type = midi_out[i+1] & 0xF0;
+        uint8_t d1 = midi_out[i+2];
+        if (cable != 0 || type != 0xB0) continue;
+        if (!plain_button_led_owned(ctrl, d1)) continue;
+        midi_out[i] = 0;
+        midi_out[i+1] = 0;
+        midi_out[i+2] = 0;
+        midi_out[i+3] = 0;
+    }
+}
+
+static void suppress_owned_plain_button_led_sysex_packets(const shadow_control_t *ctrl,
+                                                          uint8_t *midi_out) {
+    if (!ctrl || !midi_out || !plain_button_leds_owned(ctrl)) return;
+    for (int i = 8; i + 12 < HW_MIDI_OUT_SIZE; i += 4) {
+        if ((midi_out[i] & 0x0F) != 0x04) continue;
+        if (((midi_out[i] >> 4) & 0x0F) != 0) continue;
+        if (midi_out[i+1] != 0x3B) continue;
+        uint8_t idx = midi_out[i+3];
+        if (!plain_button_led_owned(ctrl, idx)) continue;
+        int start = i - 8;
+        if ((midi_out[start] & 0x0F) != 0x04 || midi_out[start+1] != 0xF0) continue;
+        for (int z = start; z <= i + 12 && z < HW_MIDI_OUT_SIZE; z += 4) {
+            midi_out[z] = 0;
+            midi_out[z+1] = 0;
+            midi_out[z+2] = 0;
+            midi_out[z+3] = 0;
+        }
+    }
+}
+
 void shadow_clear_move_leds_if_overtake(void) {
     shadow_control_t *ctrl = host.shadow_control ? *host.shadow_control : NULL;
     int cur_overtake = (ctrl && ctrl->overtake_mode >= 2) ? 1 : 0;
+    int display_mode = (ctrl && ctrl->display_mode) ? 1 : 0;
 
     uint8_t *midi_out = host.midi_out_buf;
     if (!midi_out) {
@@ -433,6 +577,10 @@ void shadow_clear_move_leds_if_overtake(void) {
             if (cable == 0 && (type == 0x90 || type == 0x80 || type == 0xB0)) {
                 uint8_t d1 = midi_out[i+2];
                 uint8_t d2 = midi_out[i+3];
+                uint8_t flags = LED_CAPTURE_F_UPDATED_NATIVE_CACHE;
+                if (!cur_overtake && type == 0xB0 && plain_button_led_owned(ctrl, d1)) {
+                    flags |= LED_CAPTURE_F_SUPPRESSED_BY_OWNERSHIP;
+                }
                 clip_state_ensure();
                 /* Move's step playhead: the lit step button, d2=126. An
                  * INDEPENDENT measure of musical position, used to check our
@@ -460,13 +608,17 @@ void shadow_clear_move_leds_if_overtake(void) {
                     move_cc_led_status[d1] = midi_out[i+1];
                     move_cc_led_cin[d1] = midi_out[i];
                 }
-                led_capture_record(cable, midi_out[i+1], d1, d2);
+                led_capture_record(midi_out[i], midi_out[i+1], d1, d2, flags);
             } else if (cable == 0 && cin_type >= 0x04 && cin_type <= 0x07) {
                 /* Cable-0 sysex from Move firmware. Feed the Move-side parser
                  * so we can cache RGB LED commands for overtake-exit restore. */
+                uint8_t flags = LED_CAPTURE_F_UPDATED_NATIVE_CACHE | LED_CAPTURE_F_SYSEX_PACKET;
+                if (!cur_overtake && plain_button_led_owned(ctrl, midi_out[i+3])) {
+                    flags |= LED_CAPTURE_F_SUPPRESSED_BY_OWNERSHIP;
+                }
                 led_queue_move_sysex_packet(midi_out[i], midi_out[i+1],
                                             midi_out[i+2], midi_out[i+3]);
-                led_capture_record(cable, midi_out[i+1], midi_out[i+2], midi_out[i+3]);
+                led_capture_record(midi_out[i], midi_out[i+1], midi_out[i+2], midi_out[i+3], flags);
             }
         }
 
@@ -486,6 +638,10 @@ void shadow_clear_move_leds_if_overtake(void) {
         clip_state_expire_pending_off(&g_clip_state,
                                       (uint32_t)shadow_transport_pulses);
     }
+
+    /* AFTER the scan, so the cache is this frame's before any ownership
+     * suppression or restore decisions consume it. */
+    service_plain_button_led_release_requests(ctrl, display_mode, cur_overtake);
 
     /* AFTER the scan, so the cache is this frame's, and only outside overtake,
      * which owns the whole surface and runs its own snapshot/restore. */
@@ -580,14 +736,23 @@ void shadow_clear_move_leds_if_overtake(void) {
         snapshot_valid = 0;
     }
 
+    /* Plain Shadow ownership lives only in display_mode=1, overtake=0. Outside
+     * that scope it is released above and this suppression falls inert. */
+    if (!cur_overtake) {
+        suppress_owned_plain_button_led_cc_packets(ctrl, midi_out);
+        suppress_owned_plain_button_led_sysex_packets(ctrl, midi_out);
+        prev_overtake_mode = cur_overtake;
+        prev_display_mode = display_mode;
+        return;
+    }
+
     prev_overtake_mode = cur_overtake;
+    prev_display_mode = display_mode;
 
     /* During overtake: clear Move's cable-0 LED packets from MIDI_OUT
      * so the overtake module has full LED control.
      * If skip_led_clear is set, let Move's LEDs pass through (e.g. song-mode
      * wants Move's pad colors to update as clips play). */
-    if (!cur_overtake) return;
-
     /* Move-native co-run: the tool sets skip_led_clear=1 so Move's CC + sysex
      * LED writes pass through (knob rings, master, track buttons, etc.). But
      * Move also re-asserts the surfaces the tool keeps (per keep_mask), which
@@ -1276,6 +1441,8 @@ static int move_sysex_restore_pending = 0;
 static int move_sysex_restore_subcmd = 0;
 static int move_sysex_restore_index = 0;
 static int move_sysex_restore_pass = 0;
+static int move_sysex_restore_scoped = 0;
+static uint32_t move_sysex_restore_mask[SHADOW_BUTTON_LED_MASK_WORDS];
 
 void led_queue_move_sysex_packet(uint8_t cin, uint8_t b1, uint8_t b2, uint8_t b3) {
     uint8_t cin_type = cin & 0x0F;
@@ -1345,6 +1512,7 @@ void led_queue_restore_move_sysex_leds(void) {
     move_sysex_restore_subcmd = 0;
     move_sysex_restore_index = 0;
     move_sysex_restore_pass = 0;
+    move_sysex_restore_scoped = 0;
 }
 
 void led_queue_freeze_move_sysex_cache(void) {
@@ -1356,8 +1524,24 @@ static void cancel_move_sysex_restore_and_thaw(void) {
     move_sysex_restore_subcmd = 0;
     move_sysex_restore_index = 0;
     move_sysex_restore_pass = 0;
+    move_sysex_restore_scoped = 0;
+    for (int i = 0; i < SHADOW_BUTTON_LED_MASK_WORDS; i++) {
+        move_sysex_restore_mask[i] = 0;
+    }
     move_sysex_cache_frozen = 0;
 }
+
+static void led_queue_restore_move_sysex_led_index(uint8_t idx) {
+    if (idx >= JACK_SYSEX_MAX_LEDS || !shadow_button_led_is_cc_eligible((int)idx)) return;
+    if (move_sysex_restore_pending && !move_sysex_restore_scoped) return;
+    move_sysex_restore_pending = 1;
+    move_sysex_restore_subcmd = 0;
+    move_sysex_restore_index = 0;
+    move_sysex_restore_pass = 0;
+    move_sysex_restore_scoped = 1;
+    move_sysex_restore_mask[shadow_button_led_mask_word(idx)] |= shadow_button_led_mask_bit(idx);
+}
+
 
 int led_queue_move_sysex_restore_pending(void) {
     return move_sysex_restore_pending;
@@ -1387,6 +1571,11 @@ int led_queue_flush_move_sysex_restore(int max_leds) {
             if (move_sysex_restore_index >= JACK_SYSEX_MAX_LEDS) {
                 move_sysex_restore_subcmd++;
                 move_sysex_restore_index = 0;
+                continue;
+            }
+            if (move_sysex_restore_scoped &&
+                !shadow_button_led_mask_test(move_sysex_restore_mask, (uint8_t)move_sysex_restore_index)) {
+                move_sysex_restore_index++;
                 continue;
             }
             if (move_sysex_led_cache[move_sysex_restore_subcmd][move_sysex_restore_index].valid)
@@ -1422,6 +1611,10 @@ int led_queue_flush_move_sysex_restore(int max_leds) {
             move_sysex_restore_index = 0;
         } else {
             move_sysex_restore_pending = 0;
+            move_sysex_restore_scoped = 0;
+            for (int i = 0; i < SHADOW_BUTTON_LED_MASK_WORDS; i++) {
+                move_sysex_restore_mask[i] = 0;
+            }
             move_sysex_cache_frozen = 0;
         }
     }

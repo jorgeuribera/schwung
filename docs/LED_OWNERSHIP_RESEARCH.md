@@ -1,8 +1,63 @@
-# Native Button LED Ownership — Research Audit (feature/native-button-led-ownership)
+# Native Button LED Ownership — Research + Implementation Audit (feature/native-button-led-ownership)
 
-> **Status: research / not deployed**. Branch `feature/native-button-led-ownership` is a
-> private investigation off `integration/ux-additions` (`6fffbff7`). DO NOT merge to
-> candidate or deploy to device without explicit approval.
+> **Status: implemented offline / not deployed**. Branch
+> `feature/native-button-led-ownership` remains a private investigation off
+> `integration/ux-additions` (`6fffbff7`). Do not merge to a candidate or
+> deploy to device without explicit approval.
+
+## 0. Implementation update (2026-08-30)
+
+The original audit below described the gap. That gap is now closed on this
+branch with a plain-Shadow ownership layer that still needs hardware proof.
+
+Implemented semantics:
+
+- Logical identity = native button CC index on cable 0.
+- Native RGB sysex using the same index is treated as the same logical button.
+- Scope is illuminated buttons only:
+  - sequencer row `16-31`
+  - track row `40-43`
+  - white/transport buttons `49,50,51,52,54,55,56,58,60,62,63,85,86,88,118,119`
+- Knob rings `71-78` are deliberately excluded and continue to use the existing
+  restore path.
+- New plain-Shadow API:
+  - `shadow_button_led_acquire(cc)`
+  - `shadow_button_led_release(cc)`
+  - `shadow_release_all_owned_button_leds()`
+- Ordering is explicit:
+  1. cache native CC/sysex first
+  2. consume release requests / lifecycle fail-safes
+  3. suppress owned native hardware writes
+  4. flush custom queued output
+- Release behavior:
+  - clears pending custom CC for that button
+  - replays latest cached native CC state
+  - arms targeted sysex replay for the same logical button index
+  - clears ownership bits only after the restore request is queued
+- Lifecycle fail-safes now cover:
+  - explicit per-button release
+  - explicit release-all
+  - `shadow_request_exit()`
+  - `display_mode 1 -> 0`
+  - `should_exit`
+  - plain Shadow -> overtake transition
+- Overtake/corun precedence remains unchanged:
+  - plain-Shadow ownership only acts outside overtake
+  - entering real overtake drops or restores plain ownership first
+  - corun `led_keep_mask` still owns LED policy inside overtake/native flows
+- Read-only capture logging now records raw bytes plus:
+  - cache update flag
+  - ownership suppression flag
+  - sysex packet byte count
+
+Hardware-only unknowns remain:
+
+- exact physical encoding used by every specific button on a real Move
+- visual quality of future pulse/blink consumers
+- any device-only timing edge during rapid native LED churn
+
+The rest of this document is kept as the historical pre-implementation audit
+plus the validation/hardware plan that still applies.
 
 ## Goal
 
@@ -392,4 +447,3 @@ drain capture ring) with hardware in hand.
 - `src/host/shadow_constants.h:260-262` — `CORUN_GRP_SHIFT`
 - `src/shadow/shadow_ui.c:602-608` — `shadow_restore_knob_leds` binding
 - `src/shadow/shadow_ui.c:337-346` — `led_keep_mask` / `CORUN_F_LED_DISTINCT`
-

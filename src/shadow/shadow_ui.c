@@ -562,6 +562,60 @@ static JSValue js_shadow_corun_end(JSContext *ctx, JSValueConst this_val, int ar
     return JS_UNDEFINED;
 }
 
+static void shadow_button_led_acquire_cc(int32_t cc) {
+    if (!shadow_control || cc < 0 || cc >= 128 || !shadow_button_led_is_cc_eligible(cc)) return;
+    int word = shadow_button_led_mask_word((uint8_t)cc);
+    uint32_t bit = shadow_button_led_mask_bit((uint8_t)cc);
+    __atomic_fetch_or((uint32_t *)&shadow_control->button_led_owned_mask[word], bit, __ATOMIC_RELAXED);
+    __atomic_fetch_and((uint32_t *)&shadow_control->button_led_release_mask[word], ~bit, __ATOMIC_RELAXED);
+}
+
+static void shadow_button_led_release_cc(int32_t cc) {
+    if (!shadow_control || cc < 0 || cc >= 128 || !shadow_button_led_is_cc_eligible(cc)) return;
+    int word = shadow_button_led_mask_word((uint8_t)cc);
+    uint32_t bit = shadow_button_led_mask_bit((uint8_t)cc);
+    __atomic_fetch_or((uint32_t *)&shadow_control->button_led_release_mask[word], bit, __ATOMIC_RELAXED);
+}
+
+static void shadow_button_led_release_all_request(void) {
+    if (!shadow_control) return;
+    shadow_control->release_all_owned_button_leds = 1;
+}
+
+/* shadow_button_led_acquire(cc) -> void
+ * Plain-Shadow temporary ownership of one native button LED. The logical
+ * identity is the button's cable-0 CC index; native RGB sysex for the same
+ * index is treated as the same owned control by the audio-side queue. */
+static JSValue js_shadow_button_led_acquire(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    (void)this_val;
+    if (!shadow_control || argc < 1) return JS_UNDEFINED;
+    int32_t cc = -1;
+    if (JS_ToInt32(ctx, &cc, argv[0])) return JS_UNDEFINED;
+    shadow_button_led_acquire_cc(cc);
+    return JS_UNDEFINED;
+}
+
+/* shadow_button_led_release(cc) -> void
+ * Request audio-side restore of the button's latest native state, then clear
+ * plain-Shadow ownership for that logical button LED. */
+static JSValue js_shadow_button_led_release(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    (void)this_val;
+    if (!shadow_control || argc < 1) return JS_UNDEFINED;
+    int32_t cc = -1;
+    if (JS_ToInt32(ctx, &cc, argv[0])) return JS_UNDEFINED;
+    shadow_button_led_release_cc(cc);
+    return JS_UNDEFINED;
+}
+
+/* shadow_release_all_owned_button_leds() -> void
+ * Deterministic fail-safe for plain Shadow ownership: audio-side queue restores
+ * every owned button's latest native state and clears ownership. */
+static JSValue js_shadow_release_all_owned_button_leds(JSContext *ctx, JSValueConst this_val, int argc, JSValueConst *argv) {
+    (void)ctx; (void)this_val; (void)argc; (void)argv;
+    shadow_button_led_release_all_request();
+    return JS_UNDEFINED;
+}
+
 /* shadow_corun_set_led_keep_mask(mask) -> void
  * Co-run lights/input split: declare which CORUN_GRP_* groups the tool owns for
  * LED stripping, independent of the input keep_mask. Call after shadow_corun_begin.
@@ -1112,6 +1166,7 @@ static JSValue js_shadow_request_exit(JSContext *ctx, JSValueConst this_val, int
     (void)argc;
     (void)argv;
     if (shadow_control) {
+        shadow_button_led_release_all_request();
         shadow_control->display_mode = 0;
     }
     return JS_UNDEFINED;
@@ -3890,6 +3945,9 @@ static void init_javascript(JSRuntime **prt, JSContext **pctx) {
     JS_SetPropertyStr(ctx, global_obj, "shadow_restore_knob_leds", JS_NewCFunction(ctx, js_shadow_restore_knob_leds, "shadow_restore_knob_leds", 0));
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_overtake_suppress_sysex", JS_NewCFunction(ctx, js_shadow_set_overtake_suppress_sysex, "shadow_set_overtake_suppress_sysex", 1));
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_overtake_suppress_master_volume", JS_NewCFunction(ctx, js_shadow_set_overtake_suppress_master_volume, "shadow_set_overtake_suppress_master_volume", 1));
+    JS_SetPropertyStr(ctx, global_obj, "shadow_button_led_acquire", JS_NewCFunction(ctx, js_shadow_button_led_acquire, "shadow_button_led_acquire", 1));
+    JS_SetPropertyStr(ctx, global_obj, "shadow_button_led_release", JS_NewCFunction(ctx, js_shadow_button_led_release, "shadow_button_led_release", 1));
+    JS_SetPropertyStr(ctx, global_obj, "shadow_release_all_owned_button_leds", JS_NewCFunction(ctx, js_shadow_release_all_owned_button_leds, "shadow_release_all_owned_button_leds", 0));
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_overtake_fx_end_of_chain", JS_NewCFunction(ctx, js_shadow_set_overtake_fx_end_of_chain, "shadow_set_overtake_fx_end_of_chain", 1));
     JS_SetPropertyStr(ctx, global_obj, "shadow_set_suspend_overtake", JS_NewCFunction(ctx, js_shadow_set_suspend_overtake, "shadow_set_suspend_overtake", 1));
     JS_SetPropertyStr(ctx, global_obj, "shadow_get_suspend_overtake", JS_NewCFunction(ctx, js_shadow_get_suspend_overtake, "shadow_get_suspend_overtake", 0));

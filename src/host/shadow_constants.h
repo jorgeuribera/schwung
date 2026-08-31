@@ -847,6 +847,36 @@ typedef struct shadow_control_t {
      * step_menu_len_c / step_menu_vel are the minimum, these the maximum. */
     volatile uint8_t step_menu_vel_max;
     volatile uint16_t step_menu_len_max_c;
+    /*
+     * APPENDED after the last field (step_menu_len_max_c), for the reason stated on every field above
+     * it: sizeof is a contract between two binaries (schwung-manager reads
+     * stay_in_shadow at a RAW offset, shmconfig.go). Appending is free under
+     * CONTROL_BUFFER_SIZE 256 for a struct that still uses well under 128;
+     * inserting is not.
+     *
+     * Plain Shadow UI temporary ownership of native button LEDs.
+     *
+     * Identity model: one logical button LED is addressed by its cable-0 CC
+     * index (e.g. Shift=49, Menu=50, Play=85). If Move also paints that same
+     * physical button via RGB sysex, the sysex command uses the same index and
+     * is treated as part of the same logical identity. This layer is therefore
+     * PER-BUTTON without being tied to any one raw packet encoding.
+     *
+     * Scope: buttons only — not pads/steps (note LEDs) and not the encoder
+     * rings (71-78), which keep their existing restore path.
+     *
+     * Lifecycle:
+     *   - owned_mask marks which buttons plain Shadow currently owns
+     *   - release_mask asks the audio-side LED queue to restore ONE button's
+     *     latest native state and clear its owned bit
+     *   - release_all asks for the same sweep across every owned button
+     *
+     * JS writes requests; the audio-side LED queue consumes them, restores
+     * hardware if appropriate, and clears the request bits/flag. */
+    volatile uint32_t button_led_owned_mask[4];
+    volatile uint32_t button_led_release_mask[4];
+    volatile uint8_t release_all_owned_button_leds;
+    volatile uint8_t _button_led_pad[3];
 } shadow_control_t;
 
 #define SM_CELL_EMPTY 255
@@ -871,6 +901,37 @@ typedef struct shadow_control_t {
 #define SAVE_STEMS_WANTS_MASTER(v) ((v) != SAVE_STEMS_STEMS)
 /* Write the per-stem files? Both Stems and Both do. */
 #define SAVE_STEMS_WANTS_STEMS(v)  ((v) != SAVE_STEMS_MASTER)
+
+#define SHADOW_BUTTON_LED_MASK_WORDS 4
+
+static inline int shadow_button_led_is_cc_eligible(int cc) {
+    if (cc >= 16 && cc <= 31) return 1;  /* row under sequencer */
+    if (cc >= 40 && cc <= 43) return 1;  /* track row */
+    switch (cc) {
+        case 49: case 50: case 51: case 52:
+        case 54: case 55: case 56: case 58:
+        case 60: case 62: case 63:
+        case 85: case 86: case 88:
+        case 118: case 119:
+            return 1;
+        default:
+            return 0;
+    }
+}
+
+static inline uint32_t shadow_button_led_mask_bit(uint8_t cc) {
+    return 1u << (cc & 31);
+}
+
+static inline int shadow_button_led_mask_word(uint8_t cc) {
+    return (int)(cc >> 5);
+}
+
+static inline int shadow_button_led_mask_test(const volatile uint32_t *mask, uint8_t cc) {
+    int word = shadow_button_led_mask_word(cc);
+    if (!mask || word < 0 || word >= SHADOW_BUTTON_LED_MASK_WORDS) return 0;
+    return (mask[word] & shadow_button_led_mask_bit(cc)) ? 1 : 0;
+}
 
 /* Co-run control-surface groups. A co-running overtake tool declares which
  * groups it KEEPS (corun_keep_mask); every other group's input cedes to the

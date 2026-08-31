@@ -130,21 +130,29 @@ let currentPrefix = 'synth';
 let currentChrome = null;
 
 /**
- * Shift state does NOT arrive as MIDI here.
+ * Physical Shift does NOT arrive as MIDI here.
  *
  * The shim forwards a deliberately short list to the shadow UI — CC 3, 14, 51,
  * 40-43, 71-78, 88, plus notes 0-7, 40-43 and (when pad_block is set) 68-99.
- * CC 49 is not on it: the shim tracks shift itself and publishes it in shared
- * memory, which is why the rest of shadow_ui.js reads shadow_get_shift_held()
- * rather than watching for a CC.
+ * CC 49 is not on it: the shim tracks Shift itself and publishes it in shared
+ * memory, which is why this host reads the physical state out of band.
  *
- * Getting this wrong is silent — every shift gesture (section step, reveal
- * values, fine adjust, reset to default) simply never fires, with nothing in
- * the logs. An overtake TOOL sharing this library does receive CC 49, which is
- * why page_input.mjs still decodes it; only this host reads it out of band.
+ * Fine Lock is a shadow_ui.js concern, not a shared-library concern, so this
+ * module asks ctx for it when available and falls back to pure physical Shift
+ * elsewhere (tests, tool consumers).
  */
-function shiftIsHeld() {
+function physicalShiftIsHeld() {
+    if (typeof ctx.isPhysicalShiftHeld === 'function') return !!ctx.isPhysicalShiftHeld();
     return typeof shadow_get_shift_held === 'function' && shadow_get_shift_held() !== 0;
+}
+
+function fineLockIsActive() {
+    return typeof ctx.isFineLockActive === 'function' && !!ctx.isFineLockActive();
+}
+
+function fineModifierActive() {
+    if (typeof ctx.isFineModifierActive === 'function') return !!ctx.isFineModifierActive();
+    return physicalShiftIsHeld();
 }
 
 /** Param View setting values. */
@@ -603,7 +611,7 @@ export function tickParamPages() {
 
     /* Shift is polled, not evented (see shiftIsHeld), so reveal follows it here
      * rather than on a CC that never arrives. */
-    controller.setReveal(shiftIsHeld());
+    controller.setReveal(physicalShiftIsHeld());
 
     controller.tick();
 
@@ -833,8 +841,9 @@ function footerHints() {
         return orderedHints({ jog: "SECT", click: "GO", extra: [["BACK", "EXIT"]] });
     }
 
-    const shift = shiftIsHeld();
-    const fine = shift ? [["KNB", "FINE"]] : null;
+    const shift = physicalShiftIsHeld();
+    const fine = fineLockIsActive() ? [["KNB", "LOCK"]]
+                                    : (fineModifierActive() ? [["KNB", "FINE"]] : null);
 
     /*
      * A menu page is a door at page scale: inert until entered, so the jog
@@ -1261,7 +1270,8 @@ export function handleParamPagesMidi(data) {
      * Mute+JogClick bypass shortcut — so read its state rather than keeping a
      * second copy that could disagree. */
     const intent = decodeInput(data, {
-        shift: shiftIsHeld(),
+        shift: physicalShiftIsHeld(),
+        fine: fineModifierActive(),
         mute: typeof ctx.isMuteHeld === 'function' ? !!ctx.isMuteHeld() : false,
     });
     if (!intent) return false;

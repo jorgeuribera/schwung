@@ -49,6 +49,8 @@ Promise.all([
     if (!down || down.direction >= 0) fail("CC71 value 127 must decode anticlockwise, got " + JSON.stringify(down));
     const down2 = I.decodeInput(cc(78, 65));
     if (!down2 || down2.slot !== 7 || down2.direction >= 0) fail("CC78 value 65 should be knob 8 anticlockwise");
+    const locked = I.decodeInput(cc(71, 1), { shift: false, fine: true });
+    if (!locked || !locked.fine) fail("explicit fine modifier should reach knob intents without pretending Shift is held");
     if (I.decodeInput(cc(71, 0)) !== null) fail("a zero delta should produce no intent");
     if (I.decodeInput(cc(70, 1)) !== null) fail("CC70 is not a knob");
     if (I.decodeInput(cc(79, 1)) !== null) fail("CC79 is the master knob, not a page knob");
@@ -62,6 +64,8 @@ Promise.all([
     if (!back || back.delta !== -1) fail("jog anticlockwise should page back");
     const coarse = I.decodeInput(cc(14, 1), { shift: true });
     if (!coarse || !coarse.byLevel) fail("shift+jog should step by level");
+    const locked = I.decodeInput(cc(14, 1), { shift: false, fine: true });
+    if (!locked || locked.byLevel) fail("fine mode alone must not turn jog paging into shift+jog");
     /* A multi-detent jog is still one page — pages are discrete. */
     const fast = I.decodeInput(cc(14, 5));
     if (!fast || fast.delta !== 1) fail("a fast jog should still advance one page, got " + fast.delta);
@@ -71,6 +75,8 @@ Promise.all([
   {
     if (!I.decodeInput(cc(3, 127))) fail("jog click press should produce an intent");
     if (I.decodeInput(cc(3, 0)) !== null) fail("jog click RELEASE must not fire again");
+    const lockedClick = I.decodeInput(cc(3, 127), { shift: false, fine: true });
+    if (!lockedClick || lockedClick.shift) fail("fine mode alone must not turn jog click into shift+click");
     if (!I.decodeInput(cc(51, 127))) fail("back press should produce an intent");
     if (I.decodeInput(cc(51, 0)) !== null) fail("back release must not fire again");
     const sd = I.decodeInput(cc(49, 127)), su = I.decodeInput(cc(49, 0));

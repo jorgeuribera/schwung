@@ -2,77 +2,119 @@
 set -euo pipefail
 cd "$(dirname "$0")/../.."
 
-# Shift Lock: double-tap Shift toggles a latch that OR's into the SAME two
-# places every Shift-layer command already reads Shift from, so nothing
-# downstream re-implements "shift or locked" for itself.
+# Fine Lock is no longer a global "virtual Shift held" OR.
 #
-#   isShiftHeld()            the SHM-backed read most call sites use
-#   hostEffectiveShiftHeld() the small overtake-mode-local-tracking group
-#
-# Static/source-pin style, matching test_overlay_shift_fine.sh and the static
-# half of test_tempo_landmarks.sh: shadow_ui.js is a host-dependent monolith
-# not meant to run standalone in Node, so this pins the SHAPE of the fix
-# rather than executing it.
+# This pins the corrected split:
+#   - physical Shift keeps global/navigation semantics
+#   - Fine Lock is double-tapped from physical Shift only
+#   - Fine Lock is consumed only by parameter-fine paths
+#   - leaving the parameter-editing domain clears it
 
 fail() { echo "FAIL: $1" >&2; exit 1; }
-file="src/shadow/shadow_ui.js"
-src="$(cat "$file")"
 
-# 1. isShiftHeld() must check the lock, and momentary Shift must still work
-#    (shadow_get_shift_held is still consulted, not replaced).
-isShiftHeldBody=$(awk '/^function isShiftHeld\(\)/{f=1} f{print; if(/^}/) exit}' "$file")
-echo "$isShiftHeldBody" | grep -q "shiftLocked" || \
-  fail "isShiftHeld() no longer consults shiftLocked"
-echo "$isShiftHeldBody" | grep -q "shadow_get_shift_held" || \
-  fail "isShiftHeld() no longer consults shadow_get_shift_held -- momentary Shift would break"
+shadow="src/shadow/shadow_ui.js"
+pages="src/shadow/shadow_ui_param_pages.mjs"
+mfx="src/shadow/shadow_ui_master_fx.mjs"
 
-# 2. hostEffectiveShiftHeld must exist and be the ONE place hostShiftHeld is
-#    OR'd with the lock -- not duplicated at each of its few read sites.
-grep -q "function hostEffectiveShiftHeld() { return hostShiftHeld || shiftLocked; }" "$file" || \
-  fail "hostEffectiveShiftHeld() is missing or no longer a plain OR of hostShiftHeld and shiftLocked"
+shadowSrc="$(cat "$shadow")"
+pagesSrc="$(cat "$pages")"
+mfxSrc="$(cat "$mfx")"
+scopeBody="$(sed -n '/const FINE_LOCK_SCOPE_VIEWS = new Set(\[/,/^]);/p' "$shadow")"
 
-n=$(echo "$src" | grep -c "shiftLocked" || true)
-[ "$n" -ge 3 ] || fail "shiftLocked appears in only $n places; expected the declaration plus both OR sites at minimum"
-
-# 3. The overtake-mode-local escape/exit gestures and the co-run CHAIN_EDIT
-#    Shift+Click branches must read the EFFECTIVE flag, not the raw one --
-#    otherwise Shift Lock would work in most of the UI but silently not here.
-for pattern in \
-  'if (hostEffectiveShiftHeld() && hostVolumeKnobTouched)' \
-  'if (hostEffectiveShiftHeld()) {' \
-  'if (hostEffectiveShiftHeld() && view === VIEWS.CHAIN_EDIT && selectedChainComponent >= 0)' \
-  'if (hostEffectiveShiftHeld() && view === VIEWS.MASTER_FX && masterFxSelectedIsModule())'
+grep -q "const FINE_LOCK_SCOPE_VIEWS = new Set" "$shadow" || \
+  fail "Fine Lock scope set is missing"
+for want in \
+  "VIEWS.PARAM_PAGES" \
+  "VIEWS.HIERARCHY_EDITOR" \
+  "VIEWS.CANVAS"
 do
-  echo "$src" | grep -qF "$pattern" || fail "missing effective-shift read: $pattern"
+  grep -q "$want" "$shadow" || fail "Fine Lock scope does not name $want"
+done
+for avoid in \
+  "VIEWS.FILEPATH_BROWSER" \
+  "VIEWS.ENUM_PICKER" \
+  "VIEWS.DYNAMIC_PARAM_PICKER"
+do
+  if grep -q "$avoid" <<<"$scopeBody"; then
+    fail "Fine Lock scope should not include list/picker view $avoid"
+  fi
 done
 
-# Regression: no gating read of the BARE hostShiftHeld should remain (the
-# three unconditional resets that clear the raw physical tracker for the
-# swallowed-shift-release workaround are fine and expected to stay bare).
-# (excludes the double-tap detector's own rising-edge check, which reads
-# hostShiftHeld deliberately -- that IS the raw physical press, not a
-# Shift-layer command gate)
-bareGating=$(echo "$src" | grep -n "if (hostShiftHeld" | grep -v "wasDown" || true)
-if [ -n "$bareGating" ]; then
-  echo "FAIL: a gating read still uses raw hostShiftHeld instead of hostEffectiveShiftHeld():" >&2
-  echo "$bareGating" >&2
-  exit 1
-fi
+grep -q "let fineLockActive = false;" "$shadow" || \
+  fail "Fine Lock latch state is missing"
+grep -q "function hostPhysicalShiftHeld() { return hostShiftHeld; }" "$shadow" || \
+  fail "hostPhysicalShiftHeld() is missing"
 
-# 4. Double-tap detection: momentary Shift must go true on the SAME press
-#    that might turn out to be a double-tap (no waiting to decide), and a
-#    debounce window constant must exist and be applied on the rising edge
-#    only (not on release, which would let a long hold plus a bounce count).
-grep -q "SHIFT_DOUBLE_TAP_MS" "$file" || fail "no double-tap timing constant found"
-grep -q "hostShiftHeld = (d2 > 0);" "$file" || fail "the CC49 handler no longer sets hostShiftHeld unconditionally on press/release"
-awk '/Always track shift state/,/Always track mute state/' "$file" | grep -q "hostShiftHeld && !wasDown" || \
-  fail "double-tap toggle is not gated on the RISING edge (wasDown check) -- a release could also toggle it"
-awk '/Always track shift state/,/Always track mute state/' "$file" | grep -q "shiftLocked = !shiftLocked" || \
-  fail "the rising-edge double-tap branch does not toggle shiftLocked"
+physicalBody=$(awk '/^function isPhysicalShiftHeld\(\)/{f=1} f{print; if(/^}/) exit}' "$shadow")
+grep -q "shadow_get_shift_held" <<<"$physicalBody" || \
+  fail "isPhysicalShiftHeld() no longer consults shadow_get_shift_held"
+grep -qv "fineLockActive" <<<"$physicalBody" || \
+  fail "isPhysicalShiftHeld() must not consult Fine Lock"
 
-echo "  ok  isShiftHeld() ORs in the lock without dropping the live SHM read"
-echo "  ok  hostEffectiveShiftHeld() is the one OR site for the overtake-local tracker"
-echo "  ok  the overtake escape/exit gestures and co-run Shift+Click read the effective flag"
-echo "  ok  no gating read of the codebase was left on the raw, lock-blind hostShiftHeld"
-echo "  ok  double-tap toggles on the rising edge only, behind a named debounce constant"
-echo "PASS: Shift Lock ORs into every existing Shift-layer read from one place"
+fineBody=$(awk '/^function isFineModifierActive\(\)/{f=1} f{print; if(/^}/) exit}' "$shadow")
+grep -q "isPhysicalShiftHeld()" <<<"$fineBody" || \
+  fail "isFineModifierActive() no longer includes physical Shift"
+grep -q "isFineLockActive()" <<<"$fineBody" || \
+  fail "isFineModifierActive() no longer includes Fine Lock"
+
+grep -q "function syncFineLockScope()" "$shadow" || \
+  fail "Fine Lock scope-clear helper is missing"
+grep -q "if (fineLockActive && !isFineLockScopeView()) fineLockActive = false;" "$shadow" || \
+  fail "Fine Lock no longer clears when the parameter-editing scope ends"
+setViewBody=$(awk '/^function setView\(newView, customLabel\)/{f=1} f{print; if(/^}/) exit}' "$shadow")
+grep -q "syncFineLockScope();" <<<"$setViewBody" || \
+  fail "setView() must clear Fine Lock immediately when leaving scope"
+
+grep -q "function handleJog(delta, shift = isPhysicalShiftHeld())" "$shadow" || \
+  fail "handleJog must default to PHYSICAL Shift, not Fine Lock"
+grep -q "hints: isPhysicalShiftHeld() ? shiftHintsFor(selectedComp)" "$shadow" || \
+  fail "chain editor footer must follow PHYSICAL Shift"
+grep -q "isPhysicalShiftHeld() ? shiftHintsFor(selectedComp)" "$mfx" || \
+  fail "Master FX footer must follow PHYSICAL Shift"
+
+for pattern in \
+  'if (hostPhysicalShiftHeld() && hostVolumeKnobTouched)' \
+  'if (hostPhysicalShiftHeld()) {' \
+  'if (hostPhysicalShiftHeld() && view === VIEWS.CHAIN_EDIT && selectedChainComponent >= 0)' \
+  'if (hostPhysicalShiftHeld() && view === VIEWS.MASTER_FX && masterFxSelectedIsModule())' \
+  'if (isPhysicalShiftHeld() && view === VIEWS.CHAIN_EDIT && selectedChainComponent >= 0)' \
+  'if (isPhysicalShiftHeld() && view === VIEWS.MASTER_FX && masterFxSelectedIsModule())'
+do
+  grep -qF "$pattern" "$shadow" || fail "missing physical-Shift call site: $pattern"
+done
+
+for stale in "shiftLocked" "hostEffectiveShiftHeld"; do
+  if grep -q "$stale" "$shadow"; then
+    fail "stale global-lock symbol still present: $stale"
+  fi
+done
+
+shiftTrack=$(awk '/Always track shift state/,/Always track mute state/' "$shadow")
+grep -q "hostShiftHeld = (d2 > 0);" <<<"$shiftTrack" || \
+  fail "CC49 handler no longer tracks raw physical Shift state"
+grep -q "hostPhysicalShiftHeld() && !wasDown" <<<"$shiftTrack" || \
+  fail "double-tap toggle must stay on the physical rising edge"
+grep -q "if (isFineLockScopeView()) {" <<<"$shiftTrack" || \
+  fail "double-tap no longer checks the parameter-editing scope"
+grep -q "fineLockActive = !fineLockActive;" <<<"$shiftTrack" || \
+  fail "double-tap no longer toggles Fine Lock"
+grep -q "showFineLockStatus(fineLockActive);" <<<"$shiftTrack" || \
+  fail "double-tap no longer raises Fine Lock UI feedback"
+
+grep -q 'drawStatusOverlay("FINE LOCK", fineLockStatusMessage);' "$shadow" || \
+  fail "Fine Lock status overlay draw is missing"
+
+grep -q "controller.setReveal(physicalShiftIsHeld());" "$pages" || \
+  fail "param pages reveal must stay bound to PHYSICAL Shift"
+grep -q "shift: physicalShiftIsHeld()," "$pages" || \
+  fail "param pages decode must feed physical Shift separately"
+grep -q "fine: fineModifierActive()," "$pages" || \
+  fail "param pages decode must feed fine mode separately"
+grep -q '\[\["KNB", "LOCK"\]\]' "$pages" || \
+  fail "param pages footer no longer shows the persistent Fine Lock indicator"
+
+echo "  ok  physical Shift and Fine Lock are split into explicit helpers"
+echo "  ok  chain/master navigation reads physical Shift only"
+echo "  ok  double-tap toggles Fine Lock only inside the parameter-editing scope"
+echo "  ok  param pages keep reveal on physical Shift and precision on the fine modifier"
+echo "PASS: Fine Lock is scoped to parameter editing instead of globally latching Shift"

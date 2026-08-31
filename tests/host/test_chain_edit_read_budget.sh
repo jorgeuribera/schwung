@@ -396,7 +396,7 @@ function world() {
     "getSlotParamCached", "drawMovyHeader", "DIAGRAM_Y", "MOVY_RULE_Y", "draw_rect",
     "getSlotParam", "slotChainComponents", "drawChainDiagram", "getChainComponentModule",
     "getModuleAbbrev", "chainComponentParamKey", "DIAGRAM_BOX_H", "SCREEN_WIDTH",
-    "getComponentParamPrefix", "drawMovyFooter", "isShiftHeld", "ensureChainConfigFresh",
+    "getComponentParamPrefix", "drawMovyFooter", "isPhysicalShiftHeld", "ensureChainConfigFresh",
     /* The knob card. These are deps rather than absent identifiers ON PURPOSE:
        a free identifier under the lift is a ReferenceError, so the obvious way
        to keep the card out of the way is a typeof guard -- which is exactly

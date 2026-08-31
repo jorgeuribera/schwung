@@ -26,7 +26,7 @@ if [ -n "$bare" ]; then
   exit 1
 fi
 
-for want in "isShiftHeld()"; do
+for want in "isFineModifierActive()"; do
   n=$(command grep -c "knobStep(.*$want" "$file" || true)
   [ "$n" -ge 4 ] || fail "only $n overlay knobStep call(s) consult shift; expected every one"
 done
@@ -35,7 +35,7 @@ done
 # step multiplier (getWavPositionShiftMultiplier), so also passing `fine` would
 # apply the gesture twice -- a shift turn would be 10x finer than intended on
 # top of the module's own multiplier.
-command grep -q "!wavPos && isShiftHeld()" "$file" || \
+command grep -q "!wavPos && isFineModifierActive()" "$file" || \
   fail "wav_position no longer opts out of the engine's fine mode -- shift would apply twice"
 command grep -q "ui_type === \"wav_position\"" "$file" || \
   fail "the wav_position opt-out lost its test"

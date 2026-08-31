@@ -69,7 +69,7 @@ export function isHardwarePadPress(data) {
 
 /**
  * @param {number[]|Uint8Array} data  [status, d1, d2]
- * @param {object} [mods]  { shift: boolean }
+ * @param {object} [mods]  { shift: boolean, fine: boolean }
  * @returns {object|null} an intent, or null when the message is not ours
  *
  * Intents:
@@ -91,7 +91,12 @@ export function decodeInput(data, mods = {}) {
         if (d1 >= KNOB_CC_FIRST && d1 <= KNOB_CC_LAST) {
             const direction = decodeDelta(d2);
             if (direction === 0) return null;
-            return { type: "knob", slot: d1 - KNOB_CC_FIRST, direction, fine: !!mods.shift };
+            return {
+                type: "knob",
+                slot: d1 - KNOB_CC_FIRST,
+                direction,
+                fine: (mods.fine !== undefined) ? !!mods.fine : !!mods.shift
+            };
         }
         if (d1 === JOG_TURN_CC) {
             const delta = decodeDelta(d2);

@@ -159,7 +159,8 @@ it. That is the design: a new param type gets a page kind, not an exception.
 | Jog click, nothing held | the section picker (minijv: 76 pages → 16 sections) |
 | Jog click, knob held | open that param's editor, if a knob cannot turn it |
 | Hold a knob | full name and value in a strip over the header |
-| Hold Shift | precision mode: every label becomes its value, and float encoders go ~10x finer |
+| Hold Shift | physical Shift: reveal values, Shift + Jog section-step, Shift + Jog click section-picker |
+| Fine modifier | precision mode: float encoders go ~10x finer; a host may source this from physical Shift alone or from a scoped Fine Lock |
 | | *(reset is on Mute, not Shift — Shift is the key you are already holding while fine-adjusting)* |
 | Mute + touch a knob | reset that param to the default its module declared |
 | Back | close the picker, then leave the view |
@@ -249,7 +250,7 @@ ctl.tick();                 // exactly one get_param
 if (needsRedraw) ctl.render(ctx, { title: `S${slot + 1} > ${abbrev}` });
 
 // MIDI
-const intent = decodeInput(data, { shift: shiftHeld });
+const intent = decodeInput(data, { shift: shiftHeld, fine: fineModifier });
 const todo = applyInput(ctl, intent, { nowMs: Date.now() });
 if (todo?.action === "exit") returnToPreviousView();
 if (todo?.action === "open") openExistingEditorFor(todo.key, todo.meta);

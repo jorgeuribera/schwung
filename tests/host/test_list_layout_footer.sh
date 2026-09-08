@@ -54,11 +54,12 @@ Promise.all([
   };
 
   const make = (controller) => new Function(
-    "controller", "shiftIsHeld", "sectionsAreDistinct",
+    "controller", "physicalShiftIsHeld", "fineLockIsActive", "fineModifierActive",
+    "sectionsAreDistinct",
     "PAGE_KNOBS", "PAGE_MENU", "PAGE_PRESET", "PAGE_ITEMS",
     "flipsOnClick", "isTurnable",
     lift("orderedHints") + "\n" + lift("footerHints") + "\nreturn footerHints;"
-  )(controller, () => false, () => false,
+  )(controller, () => false, () => false, () => false, () => false,
     P.PAGE_KNOBS, P.PAGE_MENU, P.PAGE_PRESET, P.PAGE_ITEMS,
     M.flipsOnClick, M.isTurnable);
 

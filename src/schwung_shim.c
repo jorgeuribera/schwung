@@ -4680,7 +4680,12 @@ static void shim_handle_param_bulk(uint8_t req_type) {
     if (overtake_dsp_gen && overtake_dsp_gen_inst) {
         api = overtake_dsp_gen; inst = overtake_dsp_gen_inst;
     } else if (overtake_dsp_fx && overtake_dsp_fx_inst) {
-        api = overtake_dsp_fx; inst = overtake_dsp_fx_inst;
+        /* audio_fx_api_v2_t and plugin_api_v2_t share get_param/set_param's
+         * shape (the only members this function calls through `api`), which
+         * is what let this assign across the two struct types unconditionally
+         * -- explicit now because a strict-by-default compiler (this pass:
+         * GCC 15 under its C23 default) refuses the implicit conversion. */
+        api = (plugin_api_v2_t *)overtake_dsp_fx; inst = overtake_dsp_fx_inst;
     }
     if (!api) { shadow_param->error = 14; shadow_param->result_len = -1; return; }
 

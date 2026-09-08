@@ -383,12 +383,11 @@ export const KNOB_CURVE_DEFAULT_GAMMA = 2;
 export const KNOB_CURVE_MIN_GAMMA = 1;
 export const KNOB_CURVE_MAX_GAMMA = 8;
 
-/**
- * `knob_step_mode: "declared"` — the value used by the declared-step branch.
- * Repeated here because a curve and a declared step are mutually exclusive
- * (below); keep the two spellings equal if this ever moves.
+/*
+ * KNOB_STEP_MODE_DECLARED (declared above, near isDeclaredStepMode) is reused
+ * below: a curve and a declared step are mutually exclusive, so knobCurveMode
+ * defers to the same constant rather than a second spelling of "declared".
  */
-export const KNOB_STEP_MODE_DECLARED = "declared";
 
 function clamp01(x) {
     if (!(x > 0)) return 0;   /* also catches NaN */

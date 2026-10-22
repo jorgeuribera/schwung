@@ -4365,6 +4365,9 @@ export function createController(io = {}) {
         delete s.pendingWrite[key];
         delete s.knobStates[key];
         setParam(fullKey(key), wire);
+        /* Same reason as the turn path: this enum may be the one other
+         * params derive their knob control law from. */
+        if (declaresKnobLaw(s.metaIndex)) armContractSettle();
         replanIfCondition(key);
         return wire;
     }
@@ -4382,9 +4385,6 @@ export function createController(io = {}) {
         delete s.pendingWrite[key];
         delete s.knobStates[key];
         setParam(fullKey(key), wire);
-        /* Same reason as the turn path: this enum may be the one other
-         * params derive their knob control law from. */
-        if (declaresKnobLaw(s.metaIndex)) armContractSettle();
         replanIfCondition(key);
         return wire;
     }

@@ -111,7 +111,13 @@
 #define LANES_DRIVING_PUBLISH_FRAMES 16
 /* `held_step` when no single step is held. Unsigned, so not -1. */
 #define SHADOW_HELD_STEP_NONE 0xFF
-#define CONTROL_BUFFER_SIZE 256
+/* 512: the struct reached 256 exactly once the plain-Shadow button LED
+ * ownership masks (36 bytes, appended last) were added to v1.7.3's 220, which
+ * left no headroom (test_ui_flags_layout wants `<`). The buffer is a
+ * container: growing it moves no field, and schwung-manager maps
+ * min(shmControlSize 256, segment on disk), so its raw offsets are unaffected.
+ * Deploy the shim and shadow_ui together, as for any layout change. */
+#define CONTROL_BUFFER_SIZE 512
 #define SHADOW_UI_BUFFER_SIZE     512
 /* The param segment: SHADOW_PARAM_VALUE_LEN plus shadow_param_t's header,
  * rounded up to a page with room to spare. A container with headroom, like

@@ -30,7 +30,7 @@ function harness(source=after){
     isTextEntryActive:()=>c.textEntry,handleTextEntryMidi:()=>true,
     feedbackGateActive:()=>c.feedback,feedbackGateInput:()=>true,
     dispatchCanvasMidi:()=>false,maybeDismissWarningFromInput:()=>c.warning,
-    debugLog(){},announce(){},
+    debugLog(){},announce(){},syncFineLockScope(){},physicalShiftIsHeld:()=>c.hostShiftHeld,hostPhysicalShiftHeld:()=>c.hostShiftHeld,fineModifierActive:()=>c.hostShiftHeld,
     exitToolOvertake:()=>log.escape++,exitOvertakeMode:()=>log.escape++,
     runToolCallback:f=>f(),overtakeModuleCallbacks:{onMidiMessageInternal:d=>log.tool.push([...d])},
     adjustKnobAndShow:()=>false,handleKnobTurn:(i,d)=>log.macro.push([i,d]),

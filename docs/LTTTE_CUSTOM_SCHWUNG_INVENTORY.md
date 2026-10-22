@@ -523,3 +523,6 @@ deletion, no force-push, no `git reset --hard` affecting committed work — the
 one `git reset --hard` used during this pass targeted this session's own
 uncommitted working-tree mistake, restoring to this session's own prior
 commit, not discarding any pre-existing work).
+
+---
+Ideas and pending work, with what to develop or propose upstream: `docs/LTTTE_IDEAS_AND_PENDING.md`.

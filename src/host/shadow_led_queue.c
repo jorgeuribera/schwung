@@ -554,6 +554,40 @@ static void suppress_owned_plain_button_led_sysex_packets(const shadow_control_t
     }
 }
 
+/* Full overtake with overtake_suppress_sysex: which cable-0 packets of this
+ * frame belong to an RGB LED command (F0 00 21 1D 01 01 3B <sub> <idx> ... F7,
+ * 6 USB-MIDI packets, the framing the co-run strip above reads) whose idx is in
+ * the module's button_passthrough list. Those packets are kept so a yielded
+ * button keeps Move's color (Track 1-4 are RGB: mute dims them via sysex).
+ * Only a complete, well-formed command is kept; a partial one (split across
+ * frames) or anything else is left to the strip, exactly as before.
+ * keep[] is indexed by packet (byte offset / 4). */
+static void mark_passthrough_rgb_sysex(const uint8_t *midi_out,
+                                      const uint8_t *passthrough,
+                                      uint8_t keep[HW_MIDI_OUT_SIZE / 4]) {
+    if (!passthrough) return;
+    for (int i = 8; i + 12 < HW_MIDI_OUT_SIZE; i += 4) {
+        if ((midi_out[i] & 0x0F) != 0x04) continue;        /* sysex start/continue */
+        if (((midi_out[i] >> 4) & 0x0F) != 0) continue;    /* cable 0 */
+        if (midi_out[i+1] != 0x3B) continue;               /* RGB LED command marker */
+        uint8_t idx = midi_out[i+3];
+        if (idx >= 128 || !passthrough[idx]) continue;
+        int start = i - 8;
+        int ok = 1;
+        for (int p = 0; p < 6 && ok; p++) {
+            const uint8_t *pk = midi_out + start + p * 4;
+            uint8_t cin = pk[0] & 0x0F;
+            if (((pk[0] >> 4) & 0x0F) != 0) ok = 0;
+            else if (p < 5 && cin != 0x04) ok = 0;
+            else if (p == 5 && (cin < 0x05 || cin > 0x07)) ok = 0;
+        }
+        if (!ok) continue;
+        if (midi_out[start+1] != 0xF0 || midi_out[start+2] != 0x00 ||
+            midi_out[start+3] != 0x21 || midi_out[start+5] != 0x1D) continue;
+        for (int p = 0; p < 6; p++) keep[start / 4 + p] = 1;
+    }
+}
+
 void shadow_clear_move_leds_if_overtake(void) {
     shadow_control_t *ctrl = host.shadow_control ? *host.shadow_control : NULL;
     int cur_overtake = (ctrl && ctrl->overtake_mode >= 2) ? 1 : 0;
@@ -813,6 +847,12 @@ void shadow_clear_move_leds_if_overtake(void) {
     const uint8_t *passthrough = host.passthrough_ccs;
 
     int suppress_sysex = (ctrl && ctrl->overtake_suppress_sysex);
+    /* button_passthrough means "input AND LED to Move" for those buttons: the
+     * CC latch is exempted below, and with suppress_sysex the RGB color sysex
+     * for the same idx is exempted here. No list -> nothing marked -> the
+     * strip is exactly what it was. */
+    uint8_t keep_sysex[HW_MIDI_OUT_SIZE / 4] = {0};
+    if (suppress_sysex) mark_passthrough_rgb_sysex(midi_out, passthrough, keep_sysex);
     for (int i = 0; i < HW_MIDI_OUT_SIZE; i += 4) {
         uint8_t cable = (midi_out[i] >> 4) & 0x0F;
         uint8_t cin  = midi_out[i] & 0x0F;
@@ -840,7 +880,10 @@ void shadow_clear_move_leds_if_overtake(void) {
              * Opt-in: strip every cable-0 sysex packet (start/continue/end,
              * CIN 0x04-0x07) so the tool owns RGB too. Safe because such a
              * tool paints its own pads via note-palette / CC, injected into
-             * the mailbox AFTER this strip. */
+             * the mailbox AFTER this strip.
+             * Exception: a complete RGB command for a button_passthrough idx
+             * (marked above) is Move's LED for a button the module yielded. */
+            if (keep_sysex[i / 4]) continue;
             midi_out[i] = 0;
             midi_out[i+1] = 0;
             midi_out[i+2] = 0;

@@ -67,6 +67,7 @@ TARGETS = $(BUILD_DIR)/test_clip_state \
 	$(BUILD_DIR)/test_ui_midi_out_ring \
 	$(BUILD_DIR)/test_button_led_ownership \
 	$(BUILD_DIR)/test_overtake_native_led_repaint \
+	$(BUILD_DIR)/test_overtake_passthrough_sysex \
 	$(BUILD_DIR)/test_shadow_midi_filter \
 	$(BUILD_DIR)/test_ui_midi_ring_order \
 	$(BUILD_DIR)/test_master_filter \
@@ -180,6 +181,9 @@ $(BUILD_DIR)/%: %.c | $(BUILD_DIR)
 # shadow_led_queue.c decodes clip state from the scan, so it now needs
 # clip_state.c and the two transport globals (see stub_transport_globals.c).
 $(BUILD_DIR)/test_overtake_native_led_repaint: test_overtake_native_led_repaint.c ../../src/host/shadow_led_queue.c ../../src/host/clip_state.c stub_transport_globals.c | $(BUILD_DIR)
+	$(CC) $(CFLAGS) $(DEPFLAGS) -D_POSIX_C_SOURCE=200809L $(INCLUDES) $(filter %.c,$^) -o $@ $(LDFLAGS)
+
+$(BUILD_DIR)/test_overtake_passthrough_sysex: test_overtake_passthrough_sysex.c ../../src/host/shadow_led_queue.c ../../src/host/clip_state.c stub_transport_globals.c | $(BUILD_DIR)
 	$(CC) $(CFLAGS) $(DEPFLAGS) -D_POSIX_C_SOURCE=200809L $(INCLUDES) $(filter %.c,$^) -o $@ $(LDFLAGS)
 
 $(BUILD_DIR)/test_button_led_ownership: test_button_led_ownership.c ../../src/host/shadow_led_queue.c ../../src/host/clip_state.c stub_transport_globals.c | $(BUILD_DIR)

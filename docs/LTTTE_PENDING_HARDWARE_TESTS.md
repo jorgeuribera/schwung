@@ -1,10 +1,21 @@
-# LTTTE pending hardware tests — v1.3.1 reconciliation
+# LTTTE pending hardware tests — v1.7.3 port
 
 First-class record of every feature carried ACTIVE in
-`integration/lttte-schwung-v1.3.1` that has not received physical Move
-validation since being ported onto the v1.3.1 baseline. Cross-references
+`integration/lttte-schwung-v1.7.3` that has not received physical Move
+validation since being ported onto the v1.7.3 baseline (the same list was first
+written for `integration/lttte-schwung-v1.3.1`; see `docs/LTTTE_PORT_TO_V1.7.3.md`
+for what changed in the port, and read the source commit hashes below as the
+v1.3.1-branch hashes — the v1.7.3 cherry-picks carry `(cherry picked from ...)`
+trailers). Cross-references
 `docs/LTTTE_CUSTOM_SCHWUNG_INVENTORY.md` for full commit/file detail; this
 document is the test plan, that one is the provenance record.
+
+**v1.7.3 port, items that need extra attention on hardware** (all else is as
+originally written): item 5 (the contract-refresh hook now sits in `commitEnum`
+after upstream refactored the cache-write path), item 7 (re-check every
+Shift+Click gesture, upstream added new Shift gestures between v1.3.1 and
+v1.7.3), item 8 (`CONTROL_BUFFER_SIZE` is now 512, so the shim and shadow_ui
+must be deployed together; the capture-ring log has new fields).
 
 **Do not remove any of this code because a physical test has not happened.**
 Every item below is `ACTIVE_SW_VERIFIED_PENDING_HW` in the reconciled
@@ -291,7 +302,8 @@ baseline, software-tested, and carried forward deliberately.
 - **Exact test procedure** (mechanism-level, since no consumer feature is
   wired yet):
   1. Confirm the build boots cleanly with the grown `shadow_control_t` (256
-     bytes) — i.e., schwung-manager and the shim agree on the shared-memory
+     bytes in v1.7.3 including these fields; `CONTROL_BUFFER_SIZE` was raised to
+     512 so there is headroom) — i.e., schwung-manager and the shim agree on the shared-memory
      layout (no SIGBUS on attach, no `shadow_shm_map()` refusal logged).
   2. If a minimal test harness or module can be pointed at the new fields
      directly (setting `owned_mask` bits, `release_mask` bits), confirm: (a)

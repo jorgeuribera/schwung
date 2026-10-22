@@ -283,7 +283,11 @@ and leaves sysex for ceded groups (e.g. knob-ring + master colors, idx 71–79)
 untouched. Full-overtake tools that keep Move's sequencer running can opt into
 stripping **all** cable-0 sysex via `shadow_set_overtake_suppress_sysex(1)` to
 take true full LED control; it defaults off and the framework clears it on
-overtake exit.
+overtake exit. The one exception is a button the tool yields with
+`capabilities.button_passthrough`: a complete RGB LED command whose `<idx>` is
+in that list still reaches hardware, so a yielded RGB button (Track 1-4) keeps
+Move's color — e.g. a muted track's dimmed Track LED. Without a list nothing
+changes (see `docs/LTTTE_PASSTHROUGH_LED_COLOR.md`).
 
 **Master volume.** CC 79 and master-touch note 8 are passed to Move
 unconditionally in both overtake modes, so Move can draw its native volume

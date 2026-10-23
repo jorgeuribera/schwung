@@ -252,6 +252,23 @@ baseline, software-tested, and carried forward deliberately.
      slot.
   2. Confirm the pre-existing Mute+JogClick bypass-toggle gesture still works
      unchanged, on the same slot.
+  2a. **Delete footer** (added after the gesture was confirmed on hardware):
+     on a populated device in the slot chain, HOLD Delete without clicking;
+     the footer must change at once from `JOG SEL / CLK OPEN / BACK EXIT` to
+     `JOG SEL / CLK DELETE`, and go back when Delete is released. Same on the
+     synth box. On a `+`, on the chain/patch box and on Settings, holding
+     Delete must NOT change the footer (the click does the normal thing
+     there). Repeat on Master FX (resting footer ends in `BACK BUS`). With
+     Shift AND Delete held, the footer must be the Shift one (`JOG MOVE /
+     CLK SWAP`).
+  2b. **Removal confirmation**: Delete+click a device; the footer row must
+     show `REMOVED <MODULE NAME>` (a single centred pill) while the boxes,
+     label and info line above stay fully visible (nothing drawn over them).
+     It must disappear on its own after ~1.5 s; repeat and check it also
+     disappears AT ONCE on a jog turn, on Back, and on a step press; and that
+     letting go of Delete, or just resting a finger on the jog, does NOT
+     dismiss it. Check that the name is the module's (not "FX 1"). Repeat on
+     Master FX. Check a long module name is cut, not run off the screen.
   3. **Fine Lock**: double-tap Shift; confirm the on-screen `FINE LOCK / ON`
      panel appears and a persistent `KNB LOCK` footer indicator shows.
   4. With Fine Lock latched, enter a parameter-fine-adjust path (e.g. a knob
@@ -361,6 +378,6 @@ baseline, software-tested, and carried forward deliberately.
 | 4 | Tempo landmarks + header fix | Pending (re-verify post-merge) | Never on this baseline |
 | 5 | Knob-law contract refresh | Pending (fractional guard previously HW-confirmed) | Fractional guard: before 2026-08-30 |
 | 6 | `live_params` moving-window | **Archived — do not retest** | Failed repeatedly, pre-2026-08-30 |
-| 7 | Delete+JogClick / Fine Lock | Pending | Never |
+| 7 | Delete+JogClick / Fine Lock | Delete+JogClick gesture **confirmed** (slots and Master FX, after shim `8588435c`); footer `CLK DELETE` + `REMOVED` notice (steps 2a/2b) pending; Fine Lock pending | 2026-10-22 (gesture) |
 | 8 | Native button LED ownership | Pending (no consumer feature wired yet) | Never |
 | 9 | Toolchain cast (not a HW item) | N/A | N/A |

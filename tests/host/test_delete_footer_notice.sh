@@ -129,7 +129,9 @@ const flat = (h) => (h || []).map((p) => p.join(" ")).join(" / ");
   const src = readFileSync("src/shadow/shadow_ui.js", "utf8");
   const track = src.indexOf("hostDeleteHeld = (d2 > 0);");
   const dismiss = src.indexOf("footerNoticeDismissedBy(status, d1, d2) && chainFooterNotice.clear()");
-  const click = src.indexOf("if (isPhysicalShiftHeld() && view === VIEWS.CHAIN_EDIT && selectedChainComponent >= 0)");
+  /* The FIRST jog-click dispatch in the file: there are two (the ordinary
+     one and the co-run one), and both must come after the dismissal. */
+  const click = src.indexOf("view === VIEWS.CHAIN_EDIT && selectedChainComponent >= 0)");
   if (track < 0) fail("CC 119 is no longer tracked");
   if (dismiss < 0) fail("the MIDI handler never dismisses the footer notice");
   if (click < 0) fail("could not find the jog-click dispatch");

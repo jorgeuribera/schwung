@@ -72,4 +72,14 @@ echo "  ok  chain removal calls the exact applyChainComponentPick(...) the menu'
 echo "  ok  removeMasterFxComponent performs the same shape write the picker's None pick does"
 echo "  ok  both branches are gated on a populated module and announce the removal"
 echo "  ok  the pre-existing Mute+JogClick bypass toggle is untouched in both places"
+# 5. The shim must FORWARD CC 119 to shadow_ui. Tracking it in shadow_ui.js (point 1) is useless if the shim never publishes the
+#    press: forward_to_shadow listed jog, click, back, tracks, knobs and Mute (88) but not Delete, so hostDeleteHeld stayed false
+#    and Delete+JogClick never fired on hardware.
+shim="src/schwung_shim.c"
+fwd=$(awk '/int forward_to_shadow = \(/{f=1} f{print} /claim_press_blocked\[d1\]\)\);/{if(f) exit}' "$shim")
+[ -n "$fwd" ] || fail "forward_to_shadow definition not found in the shim"
+echo "$fwd" | grep -q "d1 == CC_DELETE" || fail "the shim does not forward CC 119 (Delete) to shadow_ui"
+echo "$fwd" | grep -q "d1 == 88" || fail "the shim no longer forwards CC 88 (Mute)"
+echo "  ok  the shim forwards CC 119 (Delete) and CC 88 (Mute) to shadow_ui"
+
 echo "PASS: Delete+JogClick removes through the same supported chain-host path, in both chains"

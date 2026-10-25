@@ -269,6 +269,19 @@ baseline, software-tested, and carried forward deliberately.
      letting go of Delete, or just resting a finger on the jog, does NOT
      dismiss it. Check that the name is the module's (not "FX 1"). Repeat on
      Master FX. Check a long module name is cut, not run off the screen.
+     Also check that a fresh Delete PRESS dismisses it (Delete no longer
+     arrives as MIDI; the UI follows the shim's `delete_held` byte).
+  2c. **Delete released with the UI hidden** (the bug Charles reproduced on
+     #662's first revision, fixed by reading `shadow_get_delete_held()`
+     instead of a JS flag fed by CC 119, and reverting the shim forward of
+     `8588435c`): open a slot chain editor with a module on FX1, cursor on
+     it; press and HOLD Delete; tap Menu to dismiss the shadow UI; release
+     Delete on Move's screen; reopen the chain editor and do a PLAIN jog
+     click on that module. It must OPEN the module (no removal, no
+     `REMOVED` notice). Repeat on Master FX. Then re-confirm step 1 (the
+     gesture still fires with the forward gone) and that a module that does
+     not claim the edit CCs (e.g. mrdrums with child levels) does NOT arm
+     "Clear: pick a target" when Delete is held in its knob grid.
   3. **Fine Lock**: double-tap Shift; confirm the on-screen `FINE LOCK / ON`
      panel appears and a persistent `KNB LOCK` footer indicator shows.
   4. With Fine Lock latched, enter a parameter-fine-adjust path (e.g. a knob
@@ -407,7 +420,7 @@ baseline, software-tested, and carried forward deliberately.
 | 4 | Tempo landmarks + header fix | Pending (re-verify post-merge) | Never on this baseline |
 | 5 | Knob-law contract refresh | Pending (fractional guard previously HW-confirmed) | Fractional guard: before 2026-08-30 |
 | 6 | `live_params` moving-window | **Archived — do not retest** | Failed repeatedly, pre-2026-08-30 |
-| 7 | Delete+JogClick / Fine Lock | Delete+JogClick gesture **confirmed** (slots and Master FX, after shim `8588435c`); footer `CLK DELETE` + `REMOVED` notice (steps 2a/2b) pending; Fine Lock pending | 2026-10-22 (gesture) |
+| 7 | Delete+JogClick / Fine Lock | Gesture confirmed 2026-10-22 with shim `8588435c`; that forward is now reverted and Delete is read from the shim's `delete_held` byte, so steps 1, 2a, 2b and **2c** (Delete released with the UI hidden) must be re-run on the new build; Fine Lock pending | 2026-10-22 (gesture, previous build) |
 | 8 | Native button LED ownership | Pending (no consumer feature wired yet) | Never |
 | 9 | Toolchain cast (not a HW item) | N/A | N/A |
 | 10 | My Presets on Send A / Send B (`feat/send-fx-user-presets`) | Pending | Never |

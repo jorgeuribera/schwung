@@ -424,12 +424,3 @@ baseline, software-tested, and carried forward deliberately.
 | 8 | Native button LED ownership | Pending (no consumer feature wired yet) | Never |
 | 9 | Toolchain cast (not a HW item) | N/A | N/A |
 | 10 | My Presets on Send A / Send B (`feat/send-fx-user-presets`) | Pending | Never |
-
-## 11. Shift+jog goes to the first / last page (v1.8.2 port)
-
-On any module's grid in a slot: hold Shift and turn the jog once right -> last
-page (the host's trailing "Module" page; "My Presets" is the one before it).
-Once left -> first page. Neither wraps. A plain jog still moves one page.
-The footer shows `JOG ENDS` while Shift is down. Shift+click still opens the
-section picker (that is now the way to a section in between). Not tested on
-the Move.

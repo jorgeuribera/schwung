@@ -1368,6 +1368,13 @@ function isPhysicalShiftHeld() {
     }
     return false;
 }
+/* The name the rest of the host calls (Scenes, the canvas escape, the knob grid, ...).
+ * The Shift-Lock rewrite deleted the function and renamed only the call sites that
+ * existed at the time, so every later call raised a ReferenceError: the handler died
+ * before the press reached anyone (bare Up/Down never reached an overtake tool and
+ * every pad press on the Scenes screen was lost). Physical Shift is the meaning here;
+ * Fine Lock is deliberately separate (isFineLockActive). */
+function isShiftHeld() { return isPhysicalShiftHeld(); }
 function isFineLockActive() {
     return fineLockActive && isFineLockScopeView();
 }

@@ -864,7 +864,7 @@ function drawTouchStrip(ctx, rect, meta, value, locked) {
  * A first-run hint panel, drawn over the grid until the user does anything.
  *
  * The grid has no room for a permanent footer — it uses all 64 px — and its
- * gestures are not guessable: jog pages, shift+jog jumps to the first or last page, click with
+ * gestures are not guessable: jog pages, shift+jog jumps a section, click with
  * nothing held opens the section list, holding a knob names it, holding shift
  * reveals every value. A preview nobody can operate produces no useful
  * feedback, so it says so once and then never again.
@@ -978,7 +978,7 @@ export function drawHeader(ctx, rect, title, pageName, pageIndex, pageCount, o) 
     if (leftRoom > 8) ctx.print(x + 1, y + HEADER_TEXT_Y, fitText(ctx, title, leftRoom), 1);
 
     /* One segment per page, the current one taller — and the SEPARATORS carry
-     * the section structure that the picker (Shift+click) lists: pages of one section
+     * the section structure that Shift+jog steps through: pages of one section
      * sit flush against each other, and a 1 px gap marks where the next section
      * begins. A wide block is therefore a multi-page section, so the bar reads
      * as a map of the module rather than an undifferentiated row of ticks.

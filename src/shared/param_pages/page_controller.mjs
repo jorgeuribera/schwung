@@ -76,7 +76,7 @@ export { LAYOUT_MOVY };
  * setLayout(LAYOUT_LIST).
  */
 export const LAYOUT_LIST = "list";
-import { step, edgePage, reanchor, firstGrid, jumpIndex, groupIndex } from "./page_nav.mjs";
+import { step, stepLevel, reanchor, firstGrid, jumpIndex, groupIndex } from "./page_nav.mjs";
 
 /*
  * Menu page geometry.
@@ -3775,7 +3775,7 @@ export function createController(io = {}) {
         return (rp && sectionKey(rp) === key) ? remembered : index;
     }
 
-    /** Jog: pages. With shift: straight to the last page (right) or the first (left). */
+    /** Jog: pages. With shift: whole levels, skipping continuations. */
     function onJog(delta, { shift = false } = {}) {
         if (s.hintLines) dismissHint();
         /* Paging away takes the parameter off the screen; the list goes with
@@ -3841,7 +3841,7 @@ export function createController(io = {}) {
         if (!s.pages.length || delta === 0) return s.pageIndex;
         const before = s.pageIndex;
         rememberSection();
-        s.pageIndex = shift ? edgePage(s.pages, delta)
+        s.pageIndex = shift ? restoreSection(stepLevel(s.pages, s.pageIndex, delta))
                             : step(s.pages, s.pageIndex, delta);
         if (s.pageIndex !== before) {
             s.cursor = 0;
@@ -6005,8 +6005,8 @@ export function createController(io = {}) {
             /* The live values, so a module-supplied widget can draw what the
              * param is ACTUALLY doing rather than where its knob was left. */
             modValues: s.modValues,
-            /* Section ids for the page rule, so it groups the way the section
-             * picker (Shift+click) lists them. Cached — it only changes when the page set does. */
+            /* Section ids for the page rule, so it groups the way Shift+jog
+             * navigates. Cached — it only changes when the page set does. */
             pageGroups: pageGroups(),
             /* A sequencer's parameter-lock decorations are per SLOT; a
              * graphic replacing several slots with one picture would hide
@@ -6646,7 +6646,7 @@ export function createController(io = {}) {
                 index: s.pageIndex,
                 count: s.pages.length,
                 /* Section ids per page: pages sharing an id draw flush, so the
-                 * bar shows the sections Shift+click lists. */
+                 * bar shows what Shift+jog steps through. */
                 groups: pageGroups(),
             },
             footer: o.footer || null,

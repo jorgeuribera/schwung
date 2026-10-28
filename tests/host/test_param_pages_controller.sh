@@ -392,7 +392,7 @@ Promise.all([
     ctl.onJog(1);                                   /* into the second page */
     const deep = ctl.pageIndex;
     if (deep !== start + 1) fail("a fine jog should step one page");
-    /* Leave the section by naming another one (the path the picker takes), then name
+    /* Leave the section by naming another one (the picker's path), then name
      * this one again: it lands on the sub-page you left, not its first. */
     ctl.goToPage(pages.length - 1);
     if (ctl.pageIndex === deep) fail("naming another section did not leave this one");

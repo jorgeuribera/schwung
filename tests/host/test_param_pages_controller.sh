@@ -141,7 +141,7 @@ Promise.all([
     if (ctl.takePending()) fail("a pending intent should only be delivered once");
   }
 
-  /* ---- 6. paging: fine steps, shift goes to the last page --------------------- */
+  /* ---- 6. paging: fine steps, shift steps by level --------------------- */
   {
     const { dev, ctl } = setup("minijv");
     const start = ctl.pageIndex;
@@ -150,7 +150,7 @@ Promise.all([
     dev.resetCounters();
     const mid = ctl.pageIndex;
     ctl.onJog(1, { shift: true });
-    if (ctl.pageIndex !== ctl.pages.length - 1) fail("shift+jog right should land on the last page");
+    if (ctl.pageIndex <= mid) fail("shift+jog should advance");
     if (!dev.announcements.length) fail("changing page announced nothing");
     /* Paging resets the read cursor so the new page fills from its first key. */
     if (ctl.state.cursor !== 0) fail("the read cursor should restart on a new page");
@@ -392,11 +392,9 @@ Promise.all([
     ctl.onJog(1);                                   /* into the second page */
     const deep = ctl.pageIndex;
     if (deep !== start + 1) fail("a fine jog should step one page");
-    /* Leave the section by naming another one (the picker's path), then name
-     * this one again: it lands on the sub-page you left, not its first. */
-    ctl.goToPage(pages.length - 1);
-    if (ctl.pageIndex === deep) fail("naming another section did not leave this one");
-    ctl.goToPage(start);                            /* come back */
+    ctl.onJog(1, { shift: true });                  /* leave the section */
+    if (ctl.pageIndex === deep) fail("shift+jog did not leave the section");
+    ctl.onJog(-1, { shift: true });                 /* come back */
     if (ctl.pageIndex !== deep) {
       fail("returning to a section forgot the sub-page: landed on " + ctl.pageIndex + ", expected " + deep);
     }

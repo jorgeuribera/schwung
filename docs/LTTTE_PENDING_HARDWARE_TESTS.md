@@ -368,6 +368,35 @@ baseline, software-tested, and carried forward deliberately.
 
 ---
 
+## 10. My Presets on Send A / Send B
+
+- **Source**: branch `feat/send-fx-user-presets` (from
+  `integration/lttte-schwung-v1.7.3-b`). Guide (Spanish, with the full list):
+  `docs/LTTTE_SEND_FX_USER_PRESETS.md`.
+- **Why it exists**: the Master FX "My Presets" page (A2, PR #661) extended to
+  the 8 positions of each send bus, through the same code parametrised by bus.
+- **Software evidence**: `test_send_fx_user_presets.sh` (new, fails without
+  the change), `test_trailing_pages_wiring.sh` (send exclusion inverted), the
+  master/chain-UI/save/shape-verb/record-from-device lifts, all green; no C
+  change.
+- **Exact test procedure** (short form; 13 steps in the guide): round-trip
+  Save As / Load on Send A and Send B; `*` after a knob turn and after Save;
+  Delete No/Yes; reboot keeps sound and name; set A→B→A keeps each set's name;
+  reorder/remove (Shift+jog, Delete+click) moves names with their effects;
+  swap shows `(none)`; same module on Master FX / Send A / Send B keeps three
+  separate names; slot focus untouched; Back lands on My Presets of the same
+  send; Audition On does not audition on a send list; return level and A→B
+  feed unchanged by a load; scene-armed save stores the knob value.
+- **Expected failure modes**: a name surviving onto another module or set; a
+  Send A reorder moving Master FX or Send B names; the grid not coming back to
+  My Presets after Load/Delete; the `*` showing right after a reboot with no
+  knob touched (module normalising its state on reload — note the module).
+- **Rollback procedure**: do not merge the branch (it is not in any
+  integration branch yet).
+- **Status**: not yet attempted. **Date last attempted**: never.
+
+---
+
 ## Summary table
 
 | # | Feature | Status | Last attempted |
@@ -381,3 +410,4 @@ baseline, software-tested, and carried forward deliberately.
 | 7 | Delete+JogClick / Fine Lock | Delete+JogClick gesture **confirmed** (slots and Master FX, after shim `8588435c`); footer `CLK DELETE` + `REMOVED` notice (steps 2a/2b) pending; Fine Lock pending | 2026-10-22 (gesture) |
 | 8 | Native button LED ownership | Pending (no consumer feature wired yet) | Never |
 | 9 | Toolchain cast (not a HW item) | N/A | N/A |
+| 10 | My Presets on Send A / Send B (`feat/send-fx-user-presets`) | Pending | Never |

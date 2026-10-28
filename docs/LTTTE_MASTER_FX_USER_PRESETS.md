@@ -56,8 +56,10 @@ páginas que recorrer.
   aplicaría a toda la mezcla y el autosave de Master FX no tiene la protección
   que tiene el de los slots. Aquí solo carga al hacer clic, aunque el ajuste
   global "Audition" esté encendido.
-- **Send A / Send B** y los **inserts de bus** no tienen My Presets (sus
-  posiciones aún no guardan qué preset está cargado).
+- **Send A / Send B**: añadidos después, en la rama
+  `feat/send-fx-user-presets` (ver
+  [LTTTE_SEND_FX_USER_PRESETS.md](LTTTE_SEND_FX_USER_PRESETS.md)). Los
+  **inserts de bus** siguen sin My Presets.
 - **Módulos con interfaz propia** (ui_chain) cargados en Master FX: no se les
   añade My Presets en v1 (solo la rejilla estándar del host).
 - El **snapshot** (Shift+Copy / Shift+Delete) restaura el sonido pero no el
@@ -73,12 +75,16 @@ páginas que recorrer.
   `componentParamPagesIo` (`src/shadow/shadow_ui.js`). Para `master_fx:fxN`
   devuelve un io que llama a las MISMAS `componentTrailingMenus` /
   `runComponentActionFromGrid` que los slots, en el slot IPC 0, con la clave
-  prefijada (`master_fx:fx2` es su propio prefijo DSP). Sends → `null`.
+  prefijada (`master_fx:fx2` es su propio prefijo DSP). (Con
+  `feat/send-fx-user-presets` los Sends reciben el mismo io y los helpers de
+  abajo pasaron a llamarse `fxBus*`, con el bus como parámetro: Master FX es
+  el bus 0.)
 - `shadow_ui_presets.mjs` acepta un destino opcional (`opts`): slot IPC,
   vista de vuelta (`VIEWS.MASTER_FX`), sin mover el slot enfocado, sin
   audición. Sin `opts` se comporta exactamente como antes (slots).
 - Vuelta a la rejilla: `maybeReturnToMasterComponentGrid` (gemelo de
-  `maybeReturnToComponentGrid`), sondeado en cada tick.
+  `maybeReturnToComponentGrid`; hoy `maybeReturnToFxBusComponentGrid`),
+  sondeado en cada tick.
 - Registro: `currentUserPresets["0:master_fx:fxN"]`. Sigue al chain cuando se
   reordena/inserta/quita (`MASTER_CHAIN_TARGET.onReshape`), se borra al
   cambiar de módulo, Clear, preset de cadena completo o si otro cliente
@@ -142,6 +148,7 @@ en Master FX:
     el nombre del módulo, nada se corta raro; el teclado de Save As se ve y se
     cierra bien.
 12. **Sends**: en Send A / Send B la rejilla de un efecto NO debe mostrar My
-    Presets.
+    Presets (en esta rama; con `feat/send-fx-user-presets` SÍ lo muestra, ver
+    su guía).
 13. **Audition encendido**: con Global Settings → Audition = On, mover el jog
     en la lista de Master FX NO debe cambiar el sonido hasta hacer clic.

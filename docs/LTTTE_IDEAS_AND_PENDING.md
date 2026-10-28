@@ -2,7 +2,7 @@
 
 A running list of things this fork has, wants, or is considering, and what to do with each: **keep local**, **develop**, or **propose upstream** (charlesvestal/schwung). Anything proposed upstream must be written in English (code comments, docs, PR text) and have its own test and hardware plan first. This file is the index; the detail lives in the linked documents.
 
-Hardware test plans: `LTTTE_PENDING_HARDWARE_TESTS.md`, `LTTTE_MASTER_FX_USER_PRESETS.md`, `LTTTE_PASSTHROUGH_LED_COLOR.md`. Provenance of the older mods: `LTTTE_CUSTOM_SCHWUNG_INVENTORY.md`.
+Hardware test plans: `LTTTE_PENDING_HARDWARE_TESTS.md`, `LTTTE_MASTER_FX_USER_PRESETS.md`, `LTTTE_SEND_FX_USER_PRESETS.md`, `LTTTE_PASSTHROUGH_LED_COLOR.md`. Provenance of the older mods: `LTTTE_CUSTOM_SCHWUNG_INVENTORY.md`.
 
 ## A. Implemented in the fork
 
@@ -13,6 +13,7 @@ Hardware test plans: `LTTTE_PENDING_HARDWARE_TESTS.md`, `LTTTE_MASTER_FX_USER_PR
 | A3 | `button_passthrough` keeps Move's **LED colour** while a Tool suppresses the rest of the native LED sysex | branch `feat/overtake-passthrough-led-color` | Pending (see its doc); known risk: sysex index collision with pad notes 79/85/88 | Upstream issue #341. Small PR candidate |
 | A4 | Declared knob-step mode, opt-in knob response curves, edit-speed fraction, tempo landmarks with header crop, knob-law contract refresh, Fine Lock | integration branch, inventory | Pending | Not offered upstream yet; decide per item which are general enough |
 | A5 | Native button LED ownership (`CONTROL_BUFFER_SIZE` 256 → 512; shim and shadow UI must ship together) | integration branch | Pending | Fork-only for now |
+| A6 | Send A / Send B **My Presets** (load / save / save as / delete on the 8 positions of each send bus; same code as A2, parametrised by bus: `fxBus*` helpers; record persisted after `state` in `send_fx_<send>_<i>.json`; no shim change) | branch `feat/send-fx-user-presets` (from `integration/lttte-schwung-v1.7.3-b`); guide `LTTTE_SEND_FX_USER_PRESETS.md`; test `test_send_fx_user_presets.sh` | Pending (13 tests listed in its guide; summary in `LTTTE_PENDING_HARDWARE_TESTS.md` §10) | Natural follow-up to #661 once that PR lands; would need its own English PR |
 
 ## B. Ideas not started
 

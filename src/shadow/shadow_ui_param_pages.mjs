@@ -846,36 +846,6 @@ function traced(name, fn) {
  * embedding the same grid has its own and passes its own.
  */
 /*
- * Does Shift+Jog actually differ from Jog on THIS module?
- *
- * stepLevel skips pages belonging to the level you are already on, so it only
- * differs where a level spans more than one page. granny has six pages and six
- * distinct levels, so Shift+Jog walks exactly the same sequence as Jog — and a
- * footer saying JOG SECT there is advertising a distinction the module does not
- * have. minijv, at 76 pages over ~20 levels, is where it earns its place.
- *
- * Memoised on the pages array itself, which is replaced whenever the controller
- * rebuilds, so a module swap recomputes without any explicit invalidation.
- */
-let _sectionsPages = null;
-let _sectionsDiffer = false;
-function sectionsAreDistinct() {
-    const pages = controller ? controller.pages : null;
-    if (!pages || !pages.length) return false;
-    if (pages === _sectionsPages) return _sectionsDiffer;
-    _sectionsPages = pages;
-    const seen = new Set();
-    _sectionsDiffer = false;
-    for (const p of pages) {
-        const lv = p && p.level;
-        if (lv == null) continue;
-        if (seen.has(lv)) { _sectionsDiffer = true; break; }
-        seen.add(lv);
-    }
-    return _sectionsDiffer;
-}
-
-/*
  * Build the footer in a FIXED ORDER: jog first, click second, anything else
  * after. Positional, not descriptive — the eye learns that slot 1 is the wheel
  * and slot 2 is the button and stops re-reading them. When a state has no jog
@@ -1075,14 +1045,13 @@ function footerHints() {
     }
 
     /*
-     * Shift changes what the JOG does — but only on a module where it actually
-     * does something different. stepLevel skips pages of the level you are
-     * already on, so on granny (six pages, six distinct levels) Shift+Jog walks
-     * exactly the same sequence as Jog. Claiming SECT there advertises a
-     * distinction the module has not got; 18 of the 72 fleet modules are like
-     * that. minijv, 76 pages over ~20 levels, is where it earns its place.
+     * Shift changes what the JOG does: it goes straight to the last page
+     * (turn right) or the first (turn left) instead of stepping one. That is
+     * true on every module with more than one page, so the footer says so
+     * whenever Shift is down. (It used to say SECT, and only on modules where a
+     * section step differed from a page step.)
      */
-    const jog = (shift && sectionsAreDistinct()) ? "SECT" : "PAGE";
+    const jog = (shift && controller.pages && controller.pages.length > 1) ? "ENDS" : "PAGE";
     return orderedHints({ jog, click: "MENU", extra: fine });
 }
 

@@ -156,7 +156,7 @@ it. That is the design: a new param type gets a page kind, not an exception.
 | | |
 |---|---|
 | Jog | page |
-| Shift + Jog | jump a whole section, skipping continuation pages |
+| Shift + Jog | right: jump to the last page; left: jump to the first (use the picker for a section in between) |
 | Jog click, nothing held | the section picker (minijv: 76 pages → 16 sections) |
 | Jog click, knob held | open that param's editor, if a knob cannot turn it |
 | Hold a knob | full name and value in a strip over the header |

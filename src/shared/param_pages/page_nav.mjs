@@ -66,6 +66,22 @@ export function stepLevel(pages, index, delta) {
     return step(pages, cur, dir);
 }
 
+/**
+ * The coarsest gesture: straight to an END of the page set. A delta to the
+ * right lands on the last page, a delta to the left on the first, wherever you
+ * are. Does not wrap and never throws on an empty set.
+ *
+ * The last page is whatever the plan ends with. For a chain component that is
+ * the host's trailing "Module" page (and "My Presets" just before it); a
+ * module's OWN "Presets" browser is not guaranteed to be at either end (in the
+ * fleet fixtures it is the first page of its module 23 times out of 26), so
+ * this gesture does not promise to land on it.
+ */
+export function edgePage(pages, delta) {
+    if (!pages || pages.length === 0) return 0;
+    return delta < 0 ? 0 : pages.length - 1;
+}
+
 function sameLevel(a, b) {
     if (!a || !b) return false;
     /* `level` is null for the chain_params fallback pages; fall back to kind. */

@@ -101,9 +101,12 @@ export function decodeInput(data, mods = {}) {
         if (d1 === JOG_TURN_CC) {
             const delta = decodeDelta(d2);
             if (delta === 0) return null;
-            /* Shift makes the jog coarse — a level at a time rather than a page.
-             * On a 76-page module that is the difference between navigating and
-             * scrolling. */
+            /* Shift makes the jog coarse — straight to the last page (right) or
+             * the first (left) rather than one page. On a 76-page module that
+             * is the difference between navigating and scrolling; the section
+             * picker (Shift+click) is the way to a section in between. The
+             * field keeps its old name, `byLevel`, so existing callers read it
+             * unchanged. */
             return { type: "page", delta: delta > 0 ? 1 : -1, byLevel: !!mods.shift };
         }
         /* Buttons report press as a non-zero value and release as 0. */
@@ -199,9 +202,10 @@ export function applyInput(controller, intent, { nowMs, reveal } = {}) {
              *
              * Plain click is contextual — it opens a held param, and on a menu
              * page it enters the menu — which means the page set is not always
-             * reachable from it. Shift already means "sections" on the jog, so
-             * it means the same at rest, and there is one gesture that always
-             * gets you to the pages no matter what is on screen.
+             * reachable from it. Shift is the coarse modifier on the jog
+             * (first / last page), so at rest it is the coarse way to a place
+             * too: one gesture that always gets you to the pages no matter
+             * what is on screen.
              */
             if (intent.shift && !controller.pickerOpen) {
                 if (controller.openPicker) controller.openPicker();

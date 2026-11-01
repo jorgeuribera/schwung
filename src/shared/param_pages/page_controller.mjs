@@ -310,6 +310,19 @@ export const ANNOUNCE_THROTTLE_MS = 120;
  * release, so the final settled value always reaches the device exactly. */
 export const SETPARAM_THROTTLE_MS = 20;
 
+/* The knob-reconcile fresh-read window, in ms: how long after THIS GRID's
+ * own write a single-key fresh read is allowed to answer "did the module
+ * rewrite the page's other params?". 300ms is one fresh-read opportunity per
+ * turn at most across a whole window, and the window only opens where the
+ * module could plausibly have answered a write inside a natural gain of
+ * the hand (the recipe/progress pair: 300ms is a handful of detents). It is
+ * NOT the settle window (that one is per-key and protects the knob's own
+ * in-flight detent). */
+export const PAGE_WRITE_SUSPECT_MS = 300;
+/* At most one reconcile fresh read per key in this many ms even during the
+ * suspicion window: 'no page-wide read storm; no per-detent storm'. */
+export const RECONCILE_FRESH_READ_MIN_MS = 300;
+
 /**
  * How many modulated params get a live re-read per tick.
  *
@@ -670,6 +683,15 @@ export function createController(io = {}) {
          * latest computed wire value still waiting to be written because it
          * arrived inside the throttle window — see SETPARAM_THROTTLE_MS. */
         lastWriteMs: Object.create(null),
+        /* ms of the last write THIS GRID issued for ANY key: the fresh-read
+         * window for the reconcile-one-knob path (page_controller changes
+         * page-side params like recipe, which the MODULE may answer by
+         * rewriting OTHER page params — progress — before the read cursor
+         * re-reads that key). See knobStateInit's reconcile-one branch. */
+        pageWriteSuspectUntil: 0,
+        /* key -> ms of the last reconcile fresh read (see PAGE_WRITE_SUSPECT_
+         * MS's reconcile branch in onKnobTurn) */
+        reconcileFreshReadMs: Object.create(null),
         pendingWrite: Object.create(null),
         /* the caller acts on these; the controller never opens a screen itself */
         pending: null,
@@ -1429,6 +1451,10 @@ export function createController(io = {}) {
                 replanIfCondition(key);
             s.lastWriteMs[key] = t;
             delete s.pendingWrite[key];
+            /* Any grid write can be the one whose module-side answer rewrote
+             * OTHER page params. For PAGE_WRITE_SUSPECT_MS after a write, the
+             * reconcile path trusts a fresh single-key read over s.values. */
+            s.pageWriteSuspectUntil = t + PAGE_WRITE_SUSPECT_MS;
         }
     }
 
@@ -3345,7 +3371,28 @@ export function createController(io = {}) {
              * from where the sound is -- the same property the seeding branch
              * above already promises.
              */
-            const raw = s.values[key];
+            /* THE RACE the manage tests pin (owner brief B6): right after the
+             * grid's own write, s.values can STILL hold the value from before
+             * the module's self-reset (the read cursor has not circulated back
+             * to this key yet) — so a reconcile that only trusts s.values here
+             * reseeds the knob BACK to the stale value: the first detent
+             * writes the reset away. While the write-suspicion window is open,
+             * ONE bounded fresh read of the knob's own routed key settles it:
+             * one ~2.8ms read, only for the knob being turned, only while the
+             * suspicion window is live, then at most once per RECONCILE_
+             * FRESH_READ_MIN_MS even during a spin. No page-wide read storm.
+             * Outside the window the original s.values path below is kept. */
+            const inSuspicion = t < s.pageWriteSuspectUntil ? true : false;
+            let raw = s.values[key];
+            if (inSuspicion
+                && (s.reconcileFreshReadMs[key] || 0) <= t
+                && typeof getParam === "function") {
+                const fresh = getParam(fullKey(key));
+                if (fresh != null && fresh !== "" && Number.isFinite(Number(fresh))) {
+                    raw = fresh;
+                    s.reconcileFreshReadMs[key] = t | 0;
+                }
+            }
             if (meta.kind === KIND_ENUM) {
                 const idx = enumIndexOf(meta, raw);
                 if (idx >= 0 && idx !== Math.round(Number(st.value)))

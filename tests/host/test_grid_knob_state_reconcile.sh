@@ -151,6 +151,34 @@ Promise.all([
     fail("after the reset the walk resolved " + afterEnum + ", expected B");
   else ok("enum: stepping past the four-detent gate after a reset resolved " + afterEnum);
 
+  /* ---- 4. THE IMMEDIATE RACE (owner brief B6): a turn right after the
+   * grid write, before the read cursor re-reads the reset key. The
+   * reconcile must consult ONE fresh routed read (budgeted: only while the
+   * write-suspicion window is live, at most once per key per window)
+   * instead of trusting the stale cursor value, or the first detent writes
+   * the module reset away. ---- */
+  for (let i = 0; i < 40; i++) T();
+  for (let d = 0; d < 12; d++) { T(); ctl.onKnobTurn(progSlot, 1); }  /* progress spin: grid writes */
+  store.progress = "0";  /* the module swallowed the in-flight writes and reset it */
+  writes.length = 0;
+  /* NO controller tick between the reset and the turn: on hardware the knob
+   * can be touched before the read cursor circulates to this key, so the
+   * cursor value is still the PRE-RESET 1.0. The reconcile must move to a
+   * fresh routed read (budgeted by the suspicion window + once-per-key cap)
+   * instead of trusting it. */
+  for (let i = 0; i < 8; i++) {
+    ctl.onKnobTurn(progSlot, 1);
+    T(); T();
+  }
+  {
+    const moved = writes.filter(([k]) => k === "progress").map(([, v]) => Number(v));
+    if (!moved.length) fail("the immediate-race turn wrote nothing");
+    else if (moved[0] > 0.6)
+      fail("the immediate turn after the reset stepped from the stale cursor value " +
+           moved.join(",") + " - must fresh-read inside the suspicion window");
+    else ok("immediate-race detents continued from the fresh reset value " + moved.join(","));
+  }
+
   if (failures) process.exitCode = 1;
   else console.error("ALL PASS");
 }).catch((e) => { console.error("FAIL: " + (e && e.stack || e)); process.exit(1); });

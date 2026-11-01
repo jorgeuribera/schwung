@@ -179,6 +179,30 @@ Promise.all([
     else ok("immediate-race detents continued from the fresh reset value " + moved.join(","));
   }
 
+  /* ---- 5. P1-G: enum fresh read BY NAME ("B") reconciles too; a fresh
+   * non-numeric read must not fall back to a stale cursor value. ---- */
+  /* module rewrote the enum by NAME, and the ROUTED read delivers the name */
+  writes.length = 0;
+  opens = 0;
+  // drive a grid write first so the suspicion window opens
+  for (let i = 0; i < 8; i++) { T(); ctl.onKnobTurn(progSlot, 1); }
+  T();
+  writes.length = 0;
+  // fresh read for recipe now returns the NAME "B": the fixture getParam
+  // is routed to store, so the label arrives through the same path used
+  // on device. Reconcile must adopt B even though it is not numeric.
+  for (let i = 0; i < 4; i++) {
+    ctl.onKnobTurn(recipeSlot, 1);
+    T(); T();
+  }
+  {
+    const moved = writes.filter(([k]) => k === "recipe").map(([, v]) => v);
+    if (!moved.length) fail("the enum-by-name reconcile turn wrote nothing");
+    else if (moved[0] === "C" && store.recipe !== "C")
+      fail("the enum walk IGNORED the fresh by-name read " + moved.join(","));
+    else ok("enum-by-name fresh reconcile: first write " + moved.join(","));
+  }
+
   if (failures) process.exitCode = 1;
   else console.error("ALL PASS");
 }).catch((e) => { console.error("FAIL: " + (e && e.stack || e)); process.exit(1); });

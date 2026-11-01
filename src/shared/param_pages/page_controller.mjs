@@ -3388,7 +3388,17 @@ export function createController(io = {}) {
                 && (s.reconcileFreshReadMs[key] || 0) <= t
                 && typeof getParam === "function") {
                 const fresh = getParam(fullKey(key));
-                if (fresh != null && fresh !== "" && Number.isFinite(Number(fresh))) {
+                /* P1-G: enums may legitimately arrive BY NAME ("Major") —
+                 * the wire contract resolves them through the same options
+                 * lst, never the numeric path. A fresh non-numeric string
+                 * that dance-resolves into the option list is as fresh as
+                 * a number; dumping it back to the stale cursor value would
+                 * undo the whole reconcile. */
+                const isEnumByName = meta.kind === KIND_ENUM
+                    && typeof fresh === "string"
+                    && Array.isArray(meta.options)
+                    && meta.options.indexOf(fresh.trim()) >= 0;
+                if (fresh != null && fresh !== "" && (Number.isFinite(Number(fresh)) || isEnumByName)) {
                     raw = fresh;
                     s.reconcileFreshReadMs[key] = t | 0;
                 }

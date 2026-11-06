@@ -24,7 +24,7 @@ A local pre-commit hook runs the same fast, native checks that the CI
 `host-tests` and `go` jobs run (the device-free unit/contract tests and
 `schwung-manager` `go vet`/`build`/`test`). It runs in a few seconds and
 catches breakage before you push — no Docker or ARM64 toolchain required.
-The ARM64 cross-compile is intentionally **not** in the hook; CI runs it
+The ARM64 cross-compile is intentionally **not** in the hook; since 2026-11-06 it runs in manually dispatched CI or the tag-triggered release workflow
 authoritatively on the pull request.
 
 Install (once per clone):

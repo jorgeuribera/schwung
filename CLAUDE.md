@@ -88,7 +88,7 @@ Static/regression suite: `for t in tests/{host,shadow,store,build}/*.sh; do bash
 (~95 shell tests: source-invariant pins, compiled C units, node-run .mjs units).
 **CI gates the `tests/host/` subset** — `.github/workflows/ci.yml` runs `host-tests`
 (`make -C tests/host test` + all `tests/host/*.sh`, all green), `go`
-(`schwung-manager`), and `cross-compile` (ARM64 Docker build) on every PR and push
+(`schwung-manager`), and `cross-compile` (ARM64 Docker build) monthly or on explicit dispatch; Docker ARM cross-compile runs only on explicit dispatch (budget policy 2026-11-06)
 to `main`. `main` is branch-protected: **all three checks are required and direct
 pushes are blocked** — work on a branch and open a PR (see `CONTRIBUTING.md`;
 install the fast local checks with `./scripts/install-hooks.sh`). The broader

@@ -8,10 +8,12 @@ name: CI
 #     write token + secrets.
 #   - `permissions:` is pinned to the minimum; do not raise it.
 #   - TODO(hardening): pin third-party actions to commit SHAs once finalized.
+# Budget mode: monthly from Dec 3, 2026 or explicitly dispatched.
+# Local host/Go checks replace automatic PR/push hosted CI.
 on:
-  pull_request:
-  push:
-    branches: [main]
+  workflow_dispatch:
+  schedule:
+    - cron: "03 11 3 * *"
 
 permissions:
   contents: read
@@ -72,6 +74,8 @@ jobs:
   # artifact exists and is ELF/ARM-aarch64. build.sh runs under `set -e` with
   # no compile step masked, so the first compiler error fails this job.
   cross-compile:
+    # Heavy Docker ARM build is manual-only; release workflow still builds on tagged release.
+    if: ${{ github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

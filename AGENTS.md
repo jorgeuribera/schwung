@@ -1,5 +1,8 @@
 ## Superpowers System
 
+**Next-agent upstream UX checkpoint (2026-11-10): read `docs/FEATURE_REQUEST_2026-11-10_PAGE_REENTRY_MOD_TARGET_ENUM_MARK.md`.** This records the owner's page-resume, per-target modulation count and/or left enum live-value indicator requests. Common picker/mark ownership belongs in Schwung; avoid local DSP rewrites or automatic Move deployment. Prototype and test with public Schwung source; preserve existing work and independent QA gates.
+
+
 <EXTREMELY_IMPORTANT>
 You have superpowers. Superpowers teach you new skills and capabilities.
 RIGHT NOW run: `~/.codex/superpowers/.codex/superpowers-codex bootstrap` and follow the instructions it returns.
